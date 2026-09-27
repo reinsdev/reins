@@ -26,7 +26,7 @@
 | T5 | gate 6、6.5、6.7 + `init-config` | T1、T2 | ✅ 已合入 |
 | T6 | 护栏：hook 规则、放行授权、留痕、git hook | T2 | ✅ 已合入 |
 | T7 | 归档：`archive` + gate 9 | T1、T2 | ✅ 已合入 |
-| T8 | 总控细则 + 主链 skill + bugfix 变种 | T1 | ✅ 已合入；补充（接入 T11 命令）进行中 |
+| T8 | 总控细则 + 主链 skill + bugfix 变种（含接入 T11 命令） | T1 | ✅ 已合入 |
 | T9 | 4 个 agent + 评审报告填写说明 | T1 | ✅ 已合入 |
 | T10 | 8 个横切 skill | T8 | ✅ 已合入 |
 | T11 | 用户决策命令：uat / scope / deploy skip | T2、T6 | ✅ 已合入 |
