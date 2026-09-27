@@ -1,8 +1,8 @@
-"""`spec-driven status`. Owner: T2. Where each change stands: phase, status and next step.
-T2 extends the output with router.next_phase(); the no-.openspec message stays as is."""
+"""`spec-driven status`. Owner: T2. Where each change stands: phase, status and next step."""
 
 import json
 
+from .. import config, router
 from ..project import META, Project
 
 
@@ -13,13 +13,15 @@ def register(sub):
 
 def run(a) -> int:
     project = Project.here()
+    cfg = config.load(project) if project.enabled else {}
     changes = []
     for name in project.active_changes():
         try:
             data = json.loads((project.change_dir(name) / META).read_text(encoding="utf-8"))
-        except ValueError:
-            data = {"error": "无法解析 .meta.json"}
-        changes.append({"change": name, **data})
+            nxt = router.summary(data, cfg)
+        except (ValueError, KeyError):
+            data, nxt = {"error": "无法解析 .meta.json"}, None
+        changes.append(dict({"change": name}, **data, next=nxt))
     if a.json:
         print(json.dumps({"project": str(project.root), "enabled": project.enabled, "changes": changes},
                          ensure_ascii=False, indent=2))
@@ -31,6 +33,13 @@ def run(a) -> int:
         print("没有进行中的 change。用 /spec 开始一个。")
         return 0
     for c in changes:
-        print("%-40s mode=%-8s 档位=%-2s phase=%s" % (
-            c["change"], c.get("mode", "?"), c.get("complexity", "?"), c.get("phase", "?")))
+        if "error" in c:
+            print("%-40s %s" % (c["change"], c["error"]))
+            continue
+        s = c["next"]
+        print("%-40s mode=%-8s 档位=%s%s phase=%s(%s) 下一步=%s %s" % (
+            c["change"], c["mode"], c["complexity"], "" if c["tierConfirmed"] else "(临时)",
+            s["phase"], s["phaseStatus"], s["next"] or "-", s["action"]))
+        if s["stale"]:
+            print("%-40s 待重新过门：Phase %s" % ("", "、".join(s["stale"])))
     return 0
