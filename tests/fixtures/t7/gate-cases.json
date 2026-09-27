@@ -1,0 +1,22 @@
+[
+  {
+    "check": "uat",
+    "mutation": "unaccepted"
+  },
+  {
+    "check": "change-moved",
+    "mutation": "active"
+  },
+  {
+    "check": "archive-complete",
+    "mutation": "missing-task"
+  },
+  {
+    "check": "specs-synced",
+    "mutation": "stale-spec"
+  },
+  {
+    "check": "retrospective",
+    "mutation": "missing-retro"
+  }
+]
