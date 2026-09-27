@@ -14,6 +14,7 @@ COMMANDS = {
     "resume": "T2",
     "new": "T2",
     "retry": "T2",
+    "advance": "T2",
     "complexity": "T2",
     "design": "T2",
     "tasks_sync": "T2",
