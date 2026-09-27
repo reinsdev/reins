@@ -311,6 +311,31 @@ class LogTest(unittest.TestCase):
         self.assertEqual({(r['worker'], r['item']) for r in records}, {(w, i) for w in range(4) for i in range(30)})
         self.assertTrue(all('prompt' not in r for r in records))
 
+    def test_spawn_rotation_preserves_backup_and_concurrent_records(self):
+        self.log.parent.mkdir()
+        old = (json.dumps({'old': 'x' * (5 * 1024 * 1024)}) + '\n').encode('utf-8')
+        self.log.write_bytes(old)
+        ctx = multiprocessing.get_context('spawn')
+        start = ctx.Event()
+        children = [ctx.Process(target=record_logs, args=(str(self.home), start, n)) for n in range(4)]
+        for child in children:
+            child.start()
+        start.set()
+        try:
+            for child in children:
+                child.join(15)
+                self.assertEqual(child.exitcode, 0)
+        finally:
+            for child in children:
+                if child.is_alive():
+                    child.terminate()
+                    child.join()
+        backup = self.log.with_name('hooks.jsonl.1').read_bytes()
+        self.assertTrue(backup.startswith(old))
+        records = [json.loads(line) for line in (backup[len(old):] + self.log.read_bytes()).splitlines()]
+        self.assertEqual(len(records), 120)
+        self.assertEqual({(r['worker'], r['item']) for r in records}, {(w, i) for w in range(4) for i in range(30)})
+
     def test_rotation_replaces_only_one_backup(self):
         self.log.parent.mkdir()
         old = b'x' * (5 * 1024 * 1024 + 1)
@@ -320,7 +345,28 @@ class LogTest(unittest.TestCase):
         hook._record({'kind': 'shell'}, 'allow')
         self.assertEqual(backup.read_bytes(), old)
         self.assertEqual(json.loads(self.log.read_text(encoding='utf-8'))['verdict'], 'allow')
-        self.assertEqual(sorted(p.name for p in self.log.parent.iterdir()), ['hooks.jsonl', 'hooks.jsonl.1'])
+        self.assertEqual(sorted(p.name for p in self.log.parent.glob('hooks.jsonl*')), ['hooks.jsonl', 'hooks.jsonl.1'])
+
+    def test_overlapping_rotation_keeps_the_large_backup(self):
+        self.log.parent.mkdir()
+        old = b'x' * (5 * 1024 * 1024 + 1) + b'\n'
+        self.log.write_bytes(old)
+        original_stat = Path.stat
+        nested = []
+
+        def interleave(path, *args, **kwargs):
+            info = original_stat(path, *args, **kwargs)
+            if path == self.log and not nested:
+                nested.append(True)
+                hook._record({'writer': 'second'}, 'allow')
+            return info
+
+        with mock.patch.object(Path, 'stat', interleave):
+            hook._record({'writer': 'first'}, 'allow')
+        backup = self.log.with_name('hooks.jsonl.1').read_bytes()
+        self.assertTrue(backup.startswith(old))
+        records = backup[len(old):] + self.log.read_bytes()
+        self.assertEqual({json.loads(line)['writer'] for line in records.splitlines()}, {'first', 'second'})
 
     def test_rotation_failure_still_appends_and_does_not_block(self):
         self.log.parent.mkdir()

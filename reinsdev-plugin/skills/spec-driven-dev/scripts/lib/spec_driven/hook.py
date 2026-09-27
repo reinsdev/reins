@@ -79,6 +79,22 @@ def decide(ev: dict, errors: list = None):
     return policies.pre_tool(ev, errors if errors is not None else [])
 
 
+def _rotate_log(log) -> None:
+    # Keep the lock inode stable; OS locks are released even if a hook process dies.
+    fd = os.open(str(log.with_name(".hooks.rotate.lock")), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if log.stat().st_size > LOG_MAX_BYTES:
+            os.replace(str(log), str(log.with_name("hooks.jsonl.1")))
+    finally:
+        os.close(fd)
+
+
 def _record(ev: dict, verdict: str, errors=()) -> None:
     try:
         log = reins_home() / "logs" / "hooks.jsonl"
@@ -88,8 +104,7 @@ def _record(ev: dict, verdict: str, errors=()) -> None:
             rec["policyErrors"] = list(errors)
         rec.pop("prompt", None)  # never persist raw prompts
         try:
-            if log.stat().st_size > LOG_MAX_BYTES:
-                os.replace(str(log), str(log.with_name("hooks.jsonl.1")))
+            _rotate_log(log)
         except OSError:
             pass  # Rotation is best effort; still try to append this event.
         data = (json.dumps(rec, ensure_ascii=False) + "\n").encode("utf-8")
