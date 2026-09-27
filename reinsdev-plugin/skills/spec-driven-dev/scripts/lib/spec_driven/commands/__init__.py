@@ -25,4 +25,7 @@ COMMANDS = {
     "hook": "T0",
     "archive": "T7",
     "init_config": "T5",
+    "uat": "T11",
+    "scope": "T11",
+    "deploy": "T11",
 }

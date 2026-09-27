@@ -18,11 +18,13 @@
 | T5 | gate 6、6.5、6.7 + `init-config` | T1、T2 合入 | 第 2 批 |
 | T7 | 归档：`archive` + gate 9 | T1、T2 合入 | 第 2 批 |
 | T10 | 8 个横切 skill | T8 合入 | 第 3 批 |
+| T11 | 用户决策命令：uat / scope / deploy skip | T2、T6 合入 | 追加 |
 
 - **第 1 批 5 个任务可以同时开工**，彼此不改同一个文件。
 - **T1、T2 要最先合入**，第 2 批都依赖 `mdparse` 和 `meta`。T1 建议先交付模板和 `ALIASES`（半天量），再做解析函数，这样 T8、T9 能尽早对齐格式。
 - 第 2 批 4 个任务之间互不依赖，可以同时开。
 - 全部合入后由协调者做一次端到端联调：在示例 Java 项目里用 S 档和 M 档各走通一遍，并更新 README 和验证手册。
+- **延后事项**：Windows 真实环境验证（`install.ps1`、Git Bash 下的 hook、Codex 经 PowerShell 的 hook）放到联调之后单独做。
 
 每个任务的交付标准都包含 AGENTS.md §6 的通用要求，下文不再重复：提交信息以 agent 名字开头（`<agent 名字>: T<n>: <做了什么>`，名字由协调者分配）、测试全过、rebase、交付说明四项。
 
@@ -175,6 +177,7 @@
 3. bugfix 变种：写 bugfix-analysis.md 与 proposal.md，Phase 2/3 条件性瘦身。
 4. `tdd-implement`、`tiered-code-review` 是给 agent 读的规范（RED→GREEN→REFACTOR；提交 trailer 严格按 architecture.md §4.3；分级规则与检查清单）。
 5. 总控 Phase 8 细则：code-review 的每条 WARN 用 `retro add --source "code-review WARN" "<问题原文>"` 记入待优化清单（architecture.md §4.2）。
+6. 用户决策一律经 architecture.md §4.5 的命令落盘：Phase 8.9 通过走 `uat accept`（先请用户输入「确认验收 <change 名>」），要修改走 `uat reject`；Phase 8.5 用户选跳过走 `deploy skip`；bugfix skill 在用户确认 bugfix-analysis 后执行 `scope set`。
 
 **验收**
 - 每个 skill 的 frontmatter 能被 `frontmatter.parse()` 解析，`name` 与目录同名（补进 `tests/test_plugin.py` 的检查由协调者做，你在交付说明里列出新 skill）。
@@ -204,6 +207,30 @@
 **要做的**：按设计文档 §1.1 横切 skill 表。全部本地化：日志读本地文件、部署在本机、接口比对读本地 Swagger，不接外部服务。`local-deploy` 产出的 `deploy-report.md` 按 T1 模板；`safety-check` 在平台 hook 不可用时显式调用 CLI 的判定（需要 CLI 入口时向协调者提）。
 
 **验收**：frontmatter 合法；每个 skill 写明推荐调用点和「只分析不修改」等边界。
+
+---
+
+## T11 用户决策命令：uat / scope / deploy skip
+
+**目标**：让用户的验收、跳过部署验收、bugfix 范围评估有命令可落盘，并防止模型代替用户验收。接口见 architecture.md §4.5。
+
+**拥有的文件**
+- `commands/uat.py`、`scope.py`、`deploy.py`（新建）
+- `grants.py`、`policies/waive_grant.py`、`retro.py`：只追加，不改已有行为
+- `commands/retry.py`：只允许把回退逻辑抽成可复用函数，行为不变
+- `tests/test_user_decisions.py`
+
+**要做的**
+1. `grants`：新增口令 `确认验收 <change 名>`，以及计算验收指纹的函数（spec.md + qa-report.md 的内容哈希）。
+2. `waive_grant`：只在该 change 处于 Phase 8.9、尚未验收时签发 `uat` 授权。
+3. `retro`：新增「用户验收记录」「部署验收记录」两张表的追加函数，同样记签名。
+4. 三个命令按 §4.5 实现；`uat reject` 复用 `retry` 的回退逻辑。
+
+**验收**
+- `uat accept`：没有授权拒绝；授权后 spec.md 或 qa-report.md 变化则拒绝；非 Phase 8.9 拒绝；成功后 gate 8.9 通过。
+- 模型经子 agent 或非用户消息无法签发 `uat` 授权（沿用 T6 的判定链）。
+- `scope set` 后 `advance` 按评估跳过或保留 Phase 2 / 3；非 bugfix 或非 Phase 1 拒绝。
+- `deploy skip` 后 Phase 8.5 为 skipped、当前 Phase 为 8.9，gate 8.5 放行。
 
 ---
 

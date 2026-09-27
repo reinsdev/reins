@@ -294,6 +294,22 @@ Finding(level="BLOCK", check="ac-mapped", reason="AC-3 没有映射到任何 SC"
 - ALIASES 键：`conclusion`、`new-violations`（新增违规）、`baseline-violations`（存量违规）、`repaid-violations`（已偿还）。
 - 「检查」取值：`archunit`、`checkstyle`、`spotbugs`、`pmd`、`sqlfluff`，与 `.config.json` 的 `quality.<检查>` 键一致。
 
+### 4.5 用户决策命令
+
+用户做的决定由总控经这些命令落盘，总控不直接改 `.meta.json` / `retrospective.md`。需要授权的命令，没有授权就拒绝并说出口令；授权由 `policies/waive_grant` 在用户原样输入口令时签发（与放行同一机制，§3.3）。
+
+| 命令 | 何时用 | 授权 | 效果 |
+| --- | --- | --- | --- |
+| `spec-driven uat accept` | Phase 8.9，用户看完验收摘要表示通过 | 用户输入 `确认验收 <change 名>`；授权绑定当时 spec.md 与 qa-report.md 的内容，之后二者变化须重新确认 | 写 `uatAccepted=true` 与时间；retrospective「用户验收记录」追加一行 |
+| `spec-driven uat reject --phase N --reason "…"` | Phase 8.9，用户要修改 | 不需要 | 记入「用户验收记录」，然后等同 `retry N` |
+| `spec-driven scope set --files N [--cross-service] [--ddl] [--public-api]` | bugfix 模式、Phase 1，用户确认 bugfix-analysis 之后 | 不需要 | 写 `.meta.json` 的 `bugfixScope`，决定 Phase 2 / 3 是否跳过；输出跳过判定 |
+| `spec-driven scope show` | 任意时刻 | 不需要 | 显示当前评估与跳过判定 |
+| `spec-driven deploy skip --reason "…"` | Phase 8.5，用户选择不做部署验收 | 不需要 | Phase 8.5 标为跳过并记下理由，进入 Phase 8.9；retrospective「部署验收记录」追加一行 |
+
+- 以上命令都接受 `--change`；Phase 不对时拒绝并说明当前 Phase。
+- `uat accept` 在真实终端（TTY）里也可以让用户输入 change 名确认，作为拿不到用户消息时的退路，与 `waive` 一致。
+- 理由（`--reason`）只能来自用户原话。
+
 ---
 
 ## 5. 按场景开发
