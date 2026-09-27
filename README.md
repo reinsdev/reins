@@ -10,17 +10,17 @@ AI 写代码很快，但需求只活在对话里、设计只在脑子里，一�
 
 1. **工件链**：每个需求或 bugfix 是一个 change，按 `proposal → design → spec → tasks → 实现 → QA → code review → 用户验收 → 归档` 产出 markdown 工件，放在项目的 `.openspec/changes/<change>/` 下。
 2. **验证门**：每个阶段结束由 `spec-driven` CLI 机械校验，不过门进不了下一步。例如：验收标准是否都映射到了测试场景、测试是否真的跑了、业务取值是不是模型自己编的。
-3. **生成与评审分离**：写代码的 agent 和评审的 agent 分开。spec 评审、QA、code review 各由一个只读的独立 agent 完成，AI 不给自己打分。
+3. **生成与评审分离**：写代码的 agent 和评审的 agent 分开。spec 评审、QA、code review 各由一个独立 agent 完成，评审者只写自己的报告，AI 不给自己打分。
 4. **Java 企业级代码管控**：让 AI 产出的代码符合企业的各项要求，而不只是「能跑」：
    - **团队规范**：通用 skill 自动加载项目专属规约（`<项目>/.claude/skills/*-conventions/`），编码、命名、接口、DDL 规范按项目各自定制
    - **分层架构**：任务按 Foundation → Domain → Application → Adapter 分层拆分；分层和依赖方向约束写进 `architecture.md`，由 ArchUnit 落成测试强制执行
-   - **静态质量**：Checkstyle、SpotBugs、PMD 在提交前把关，MyBatis mapper XML 和 Flyway 脚本经 SQLFluff 检查 SQL 规范
+   - **静态质量**：Checkstyle、SpotBugs、PMD 在 Phase 6 出口把关，MyBatis mapper XML 和 Flyway 脚本经 SQLFluff 检查 SQL 规范
    - **测试真跑**：`-DskipTests`、surefire skip、0 个测试都会被拦截；RED 必须先于 GREEN；覆盖率（JaCoCo）不达标须由你本人确认并留痕
    - **接口与数据**：接口契约与 Swagger / OpenAPI 比对一致性；DDL 必须带索引设计和回滚脚本
-5. **按复杂度分档**：S / M / L 三档。简单需求跳过设计、评审和 QA，约 4 个工件；复杂需求要求 ≥3 个方案对比、两轮评审。
-6. **人工放行与留痕**：任何拦截都可以放行，但只能由你本人在终端确认，记进 `retrospective.md`；降档同理。归档时 spec 合并进项目主 specs，设计决策沉淀为 ADR。
+5. **按复杂度分档**：S / M / L 三档。S 档跳过 Phase 2/3/5/7，保留 code review 和用户验收；复杂需求要求 ≥3 个方案对比、两轮评审。
+6. **人工放行与留痕**：任何拦截都可以放行，由你本人在会话中输入完整确认口令，hook 签发一次性授权，总控消费授权后记进 `retrospective.md`；缺少提示词 hook 时，放行和验收可在真实终端确认。降档同样需要口令授权。归档时 spec 合并进项目主 specs，设计决策沉淀为 ADR。
 
-一份源码，构建为 Claude Code、Codex、OpenCode 三个平台的插件。发布命名空间为 `reinsdev`：插件 ID `reins@reinsdev`，GitHub 仓库 `reinsdev/reins`，OpenCode npm 包 `@reinsdev/opencode`。文档索引见文末。
+一份源码，由 Claude Code、Codex、OpenCode 三个平台直接加载，无需构建插件。发布命名空间为 `reinsdev`：插件 ID `reins@reinsdev`，GitHub 仓库 `reinsdev/reins`，OpenCode npm 包 `@reinsdev/opencode`。文档索引见文末。
 
 ## 安装
 
@@ -57,6 +57,19 @@ irm https://raw.githubusercontent.com/reinsdev/reins/main/install.ps1 | iex
 | Codex | `$spec <需求一句话>` | `$bugfix "<问题描述>"` | `$waive`，或直接说「放行」 |
 
 Codex 没有自定义斜杠命令，入口是同名 skill。OpenCode 里也可以用 `@spec-evaluator` 直接调用评审 agent。
+
+### 从需求到验收
+
+总控用 `new` 建 change，再用 `advance` 校验当前阶段并推进。`gate` 只检查，不推进；WARN 需要用户确认后通过 `advance --ack-warn` 继续，BLOCK 留在原阶段。S 档跳过的阶段会在路由经过时记入状态。
+
+- bugfix 的影响范围由总控在 Phase 1 用 `scope set --files N` 落盘，`--cross-service`、`--ddl`、`--public-api` 决定是否需要设计和规格。
+- 提交带 `Task-Id` trailer，RED 另带 `TDD-Phase: RED`。总控用 `tasks-sync --apply` 同步勾选。`new` 安装的 git hook 检查提交证据和留痕完整性。
+- 首次接入由 `init-config --java --dry-run` 预览，再运行 `init-config --java`。它执行静态检查并建立基线，不会替项目安装质量工具或编写 ArchUnit 规则；工具和报告必须真实可用。
+- 评审报告按插件 `templates/reports/` 填写。首行是对应 agent 的 `generated-by` 标记，结论表的 BLOCK/WARN/INFO 数量必须与问题清单一致。不能用一句“通过”代替。
+- 用户不做部署验收时，总控在 Phase 8.5 执行 `deploy skip --reason "用户理由"`。Phase 8.9 输入 `确认验收 <change>` 后，总控才能 `uat accept`；需要修改时用 `uat reject --phase N --reason "用户理由"` 回退。
+- 放行口令是 `确认放行 <change> <gate> <check>`。`check` 必须用当前 BLOCK 输出中的完整标识。口令不是普通“继续”，授权绑定拦截内容，内容改变需要重新确认。
+
+以上 CLI 由总控调用，用户在会话中仍使用 `/spec`、`/bugfix`、`/waive`。开发者可运行 `python3 tools/e2e/run.py` 在临时 Maven 项目中复现 CLI 流程，无需启动 AI 平台。当前联调发现的阻塞及诊断放行见 [联调报告](docs/dev/e2e-report.md)，不能把带放行的诊断运行视为完整通过。详细步骤见 [验证手册](docs/verification.md#17-cli-端到端联调)。Windows 验证延后。
 
 ### 用平台原生命令安装
 
@@ -110,6 +123,7 @@ reinsdev-plugin/                     插件本身
 └── agents/*.md                      4 个评审 / 实现 agent
 
 tests/                               CLI 与插件结构的测试（不进插件）
+tools/e2e/                           临时 Java 项目的 CLI 联调脚本与样例
 tools/reinsdev/  bin/reinsdev        安装工具 reinsdev（不进插件）
 install.sh  install.ps1              一行命令安装入口；在仓库里运行则安装工作区
 docs/                                设计方案、验证手册
@@ -131,7 +145,7 @@ agent 的 frontmatter 同时写了 `tools`（给 Claude Code）和 `access`（�
 | 工具 | 给谁用 | 命令 | 位置 |
 | --- | --- | --- | --- |
 | `reinsdev` | 用户，只在安装阶段 | `install` / `update` / `uninstall` / `doctor` / `setup` / `version` | `tools/reinsdev/`，经 `bin/reinsdev` 运行；用户由一行命令安装到 `~/.reins/`，不进插件 |
-| `spec-driven` | 总控和各平台 hook，用户看不到 | `version` / `status` / `hook` | 插件内 `skills/spec-driven-dev/scripts/`，随插件分发 |
+| `spec-driven` | 总控和各平台 hook，用户看不到 | `new` / `advance` / `gate` / `tasks-sync` / `init-config` / `uat` / `scope` / `deploy` / `waive` / `archive` 等 | 插件内 `skills/spec-driven-dev/scripts/`，随插件分发 |
 
 两者都只用 Python 3.8+ 标准库，共用 `spec_driven` 里的版本号和 frontmatter 解析。用户在会话里只接触 `/spec`、`/bugfix`、`/waive`。
 
