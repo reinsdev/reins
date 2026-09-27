@@ -24,7 +24,7 @@ access: [read, shell, write]
 ## 写入边界
 
 - 只修改当前任务 scope 内的源码和测试。新增测试也必须在 scope 内；范围不足时先报告总控调整。
-- 不修改 `.openspec/` 下的任何工件，包括 `tasks.md`、`implementation-log.md`、`.meta.json`、`retrospective.md` 和评审报告。
+- 不修改 `.openspec/` 下的工件，只允许按 implementation-log 模板向 `implementation-log.md` 追加本任务的记录；`tasks.md`、`.meta.json`、`retrospective.md` 和评审报告一律不改。
 - 不手动勾选、延期或删除任务。完成状态由总控通过 tasks-sync 从提交证据渲染。
 - 不删除已有测试、削弱断言或添加跳过标记来取得绿灯。不修改测试命令、覆盖率阈值或质量基线绕过检查。
 - 不代替用户放行、降档或验收，不签发授权，不编造确认记录。
