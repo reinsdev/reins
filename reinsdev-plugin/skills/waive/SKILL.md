@@ -17,7 +17,7 @@ argument-hint: "[<gate> <检查项>]"
 
    只有这句口令由用户本人发出时，平台的 UserPromptSubmit hook 才会签发一次性的放行授权。用户说「放行」「可以」「同意」都不算确认，继续请用户输入口令。
 5. 用户输入口令后，执行 `<spec-driven-dev skill 目录>/scripts/spec-driven waive <gate> <检查项> --change <change> --reason "<用户给的理由>"`。命令消费授权，在 retrospective.md「人工确认记录」追加记录。命令报「没有有效授权」时，把原文告诉用户并停下，不要重试或绕过。
-   - 用户已输入口令、命令仍报没有授权时（平台没把用户消息交给 Reins），把失败原因告诉用户并停下。待平台恢复授权能力后，再由用户重新确认。
+   - 用户已输入口令、命令仍报没有授权时（平台没把用户消息交给 Reins），若执行通道支持用户交互的真实终端，由你执行同一条带 `--change <change>` 的命令，请用户本人按终端提示输入 change 名确认。没有可用的交互终端时停下并说明原因。不得代填确认。
 6. 执行 `<spec-driven-dev skill 目录>/scripts/spec-driven gate <gate> --change <change>`，确认该项显示 `[WAIVED]`，回到总控主循环。
 
 用户表达的是「不要放行」「先别放行」，或者放行不是用户提出的，都不执行本 skill 的第 4、5 步。
