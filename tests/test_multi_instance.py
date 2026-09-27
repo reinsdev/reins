@@ -254,3 +254,84 @@ class RetroConcurrencyTest(unittest.TestCase):
         self.assertEqual(set(retro.todos(self.directory)), {'%s-%s' % (w, i) for w in range(4) for i in range(15)})
         self.assertEqual(len(retro.todos(self.directory)), 60)
         self.assertTrue(retro.verify(self.directory))
+
+
+def record_logs(home, start, worker):
+    os.environ['REINS_HOME'] = home
+    if not start.wait(10):
+        raise RuntimeError('workers were not started')
+    for item in range(30):
+        hook._record({'worker': worker, 'item': item, 'prompt': 'private prompt', 'command': '中文' * 3000}, 'allow')
+
+
+class LogTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+        env = mock.patch.dict(os.environ, {'REINS_HOME': str(self.home)})
+        env.start()
+        self.addCleanup(env.stop)
+        self.log = self.home / 'logs/hooks.jsonl'
+
+    def test_record_is_one_unbuffered_append_without_prompt(self):
+        calls = []
+        write = os.write
+
+        def observe(fd, data):
+            calls.append(data)
+            return write(fd, data)
+
+        with mock.patch('os.write', side_effect=observe):
+            hook._record({'prompt': 'private prompt', 'kind': 'shell'}, 'allow', ['broken policy'])
+        self.assertEqual(len(calls), 1)
+        record = json.loads(self.log.read_text(encoding='utf-8'))
+        self.assertNotIn('prompt', record)
+        self.assertEqual(record['verdict'], 'allow')
+        self.assertEqual(record['policyErrors'], ['broken policy'])
+
+    def test_spawn_writes_leave_complete_json_records(self):
+        ctx = multiprocessing.get_context('spawn')
+        start = ctx.Event()
+        children = [ctx.Process(target=record_logs, args=(str(self.home), start, n)) for n in range(4)]
+        for child in children:
+            child.start()
+        start.set()
+        try:
+            for child in children:
+                child.join(15)
+                self.assertEqual(child.exitcode, 0)
+        finally:
+            for child in children:
+                if child.is_alive():
+                    child.terminate()
+                    child.join()
+        records = [json.loads(line) for line in self.log.read_text(encoding='utf-8').splitlines()]
+        self.assertEqual(len(records), 120)
+        self.assertEqual({(r['worker'], r['item']) for r in records}, {(w, i) for w in range(4) for i in range(30)})
+        self.assertTrue(all('prompt' not in r for r in records))
+
+    def test_rotation_replaces_only_one_backup(self):
+        self.log.parent.mkdir()
+        old = b'x' * (5 * 1024 * 1024 + 1)
+        self.log.write_bytes(old)
+        backup = self.log.with_name('hooks.jsonl.1')
+        backup.write_bytes(b'previous rotation')
+        hook._record({'kind': 'shell'}, 'allow')
+        self.assertEqual(backup.read_bytes(), old)
+        self.assertEqual(json.loads(self.log.read_text(encoding='utf-8'))['verdict'], 'allow')
+        self.assertEqual(sorted(p.name for p in self.log.parent.iterdir()), ['hooks.jsonl', 'hooks.jsonl.1'])
+
+    def test_rotation_failure_still_appends_and_does_not_block(self):
+        self.log.parent.mkdir()
+        old = b'x' * (5 * 1024 * 1024 + 1) + b'\n'
+        self.log.write_bytes(old)
+        with mock.patch('os.replace', side_effect=OSError('busy backup')):
+            hook._record({'kind': 'shell'}, 'allow')
+        data = self.log.read_bytes()
+        self.assertTrue(data.startswith(old))
+        self.assertEqual(json.loads(data[len(old):])['verdict'], 'allow')
+
+    def test_log_io_failure_does_not_block(self):
+        with mock.patch('os.open', side_effect=OSError('disk full')):
+            self.assertIsNone(hook._record({'kind': 'shell'}, 'allow'))
