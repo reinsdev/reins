@@ -491,7 +491,17 @@ class TasksSyncCommitTest(ProjectTest):
         self.stage_tasks(self.TASKS.replace('[ ] T2', '[x] T2'))
         self.assertIn('已冻结', '\n'.join(githook.pre_commit(self.project)))
 
-    def test_later_phase_keeps_tasks_frozen(self):
-        meta.update(self.directory, lambda data: data.update(phase='7'))
-        self.stage_tasks(self.TASKS.replace('[ ] T1', '[x] T1'))
-        self.assertIn('已冻结', '\n'.join(githook.pre_commit(self.project)))
+    def test_later_phases_accept_synced_ticks(self):
+        for phase in ('7', '8', '9'):
+            with self.subTest(phase=phase):
+                meta.update(self.directory, lambda data: data.update(phase=phase))
+                self.stage_tasks(self.TASKS.replace('[ ] T1', '[x] T1'))
+                self.assertEqual(githook.pre_commit(self.project), [])
+
+    def test_later_phases_keep_task_body_and_false_ticks_frozen(self):
+        meta.update(self.directory, lambda data: data.update(phase='9'))
+        synced = self.TASKS.replace('[ ] T1', '[x] T1')
+        for text in (synced.replace('first task', 'rewritten task'), synced.replace('[ ] T2', '[x] T2')):
+            with self.subTest(text=text):
+                self.stage_tasks(text)
+                self.assertIn('已冻结', '\n'.join(githook.pre_commit(self.project)))

@@ -128,7 +128,9 @@ def pre_commit(project: Project) -> List[str]:
         before = _show(root, "HEAD:" + path)
         staged = _show(root, ":" + path)
         if before is not None and before != staged:
-            if name == P.TASKS and m["phase"] == "6":
+            # Ticks are checked against Task-Id commits, so they stay valid after Phase 6:
+            # tasks-sync often runs just before leaving 6 and is committed in 7 or later.
+            if name == P.TASKS and PHASES.index(m["phase"]) >= PHASES.index("6"):
                 done = taskstate.done_tasks(project, m)
                 # render changes only task checkboxes; compare the index, never the working file.
                 if staged == taskstate.render(before, done):
