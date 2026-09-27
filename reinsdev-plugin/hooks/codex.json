@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/skills/spec-driven-dev/scripts/spec-driven\" hook pre-tool --runtime codex",
+            "commandWindows": "& \"$env:PLUGIN_ROOT\\skills\\spec-driven-dev\\scripts\\spec-driven.cmd\" hook pre-tool --runtime codex"
+          }
+        ],
+        "matcher": "^(Bash|apply_patch|Edit|Write)$"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}/skills/spec-driven-dev/scripts/spec-driven\" hook prompt-submit --runtime codex",
+            "commandWindows": "& \"$env:PLUGIN_ROOT\\skills\\spec-driven-dev\\scripts\\spec-driven.cmd\" hook prompt-submit --runtime codex"
+          }
+        ]
+      }
+    ]
+  }
+}

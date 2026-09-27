@@ -1,0 +1,27 @@
+{
+  "name": "@reinsdev/opencode",
+  "version": "0.1.0",
+  "description": "Reins：规格驱动研发工件链（proposal → design → spec → tasks → 实现 → 归档），面向 Java 企业级项目",
+  "type": "module",
+  "main": "index.js",
+  "exports": "./index.js",
+  "files": [
+    "index.js",
+    "agents",
+    "skills",
+    "!**/__pycache__"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "spec-driven",
+    "java"
+  ],
+  "homepage": "https://reinsdev.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reinsdev/reins.git",
+    "directory": "reinsdev-plugin"
+  },
+  "license": "UNLICENSED"
+}

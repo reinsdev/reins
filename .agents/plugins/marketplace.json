@@ -1,0 +1,20 @@
+{
+  "name": "reinsdev",
+  "interface": {
+    "displayName": "Reins (reinsdev)"
+  },
+  "plugins": [
+    {
+      "name": "reins",
+      "source": {
+        "source": "local",
+        "path": "./reinsdev-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

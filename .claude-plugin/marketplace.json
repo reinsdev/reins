@@ -1,0 +1,16 @@
+{
+  "name": "reinsdev",
+  "owner": {
+    "name": "reinsdev",
+    "url": "https://reinsdev.com"
+  },
+  "description": "Reins：规格驱动研发工件链（proposal → design → spec → tasks → 实现 → 归档），面向 Java 企业级项目",
+  "plugins": [
+    {
+      "name": "reins",
+      "source": "./reinsdev-plugin",
+      "description": "Reins：规格驱动研发工件链（proposal → design → spec → tasks → 实现 → 归档），面向 Java 企业级项目",
+      "version": "0.1.0"
+    }
+  ]
+}

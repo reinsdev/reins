@@ -1,0 +1,4 @@
+# Launchers and generated plugin files are LF on every OS; cmd/ps1 are CRLF.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

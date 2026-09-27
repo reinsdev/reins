@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.8", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Unit tests
+        run: python -m unittest discover -s tests -t .
+      - name: OpenCode entry loads shared content
+        shell: bash
+        run: |
+          node --input-type=module -e '
+            const m = await import("./reinsdev-plugin/index.js")
+            const { agents, commands } = m.loadContent()
+            if (Object.keys(agents).length !== 4 || !commands.spec || !commands.bugfix) throw new Error("content")
+            const p = await m.ReinsPlugin({ directory: "." })
+            let blocked = false
+            try { await p["tool.execute.before"]({ tool: "bash" }, { args: { command: "touch a.reins-probe-block" } }) } catch { blocked = true }
+            if (!blocked) throw new Error("probe not blocked")'
+      - name: sh launcher (Git Bash on Windows)
+        shell: bash
+        run: |
+          reinsdev-plugin/skills/spec-driven-dev/scripts/spec-driven version
+          bin/reinsdev --help > /dev/null
+          echo '{"tool_name":"Bash","tool_input":{"command":"touch a.reins-probe-block"}}' \
+            | reinsdev-plugin/skills/spec-driven-dev/scripts/spec-driven hook pre-tool --runtime codex \
+            | grep -q '"permissionDecision": "deny"'
+      - name: cmd launcher
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          reinsdev-plugin\skills\spec-driven-dev\scripts\spec-driven.cmd version
+          bin\reinsdev.cmd --help
+      - name: Codex-style hook via PowerShell (commandWindows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:PLUGIN_ROOT = "$PWD\reinsdev-plugin"
+          $out = '{"tool_name":"Bash","tool_input":{"command":"touch a.reins-probe-block"}}' | & "$env:PLUGIN_ROOT\skills\spec-driven-dev\scripts\spec-driven.cmd" hook pre-tool --runtime codex
+          if ($out -notmatch '"permissionDecision": "deny"') { Write-Error "hook did not deny: $out"; exit 1 }

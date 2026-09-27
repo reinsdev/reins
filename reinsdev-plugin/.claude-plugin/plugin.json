@@ -1,0 +1,12 @@
+{
+  "name": "reins",
+  "version": "0.1.0",
+  "description": "Reins：规格驱动研发工件链（proposal → design → spec → tasks → 实现 → 归档），面向 Java 企业级项目",
+  "author": {
+    "name": "reinsdev",
+    "url": "https://reinsdev.com"
+  },
+  "homepage": "https://reinsdev.com",
+  "repository": "https://github.com/reinsdev/reins",
+  "hooks": "./hooks/claude.json"
+}
