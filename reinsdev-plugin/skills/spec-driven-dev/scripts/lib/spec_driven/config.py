@@ -14,7 +14,14 @@ from .project import Project
 DEFAULTS = {
     # gates.<id>.level: block | warn | info | off. Locked checks ignore it (§6.1).
     "gates": {},
-    "test": {"coverage": {"diff_threshold": 80}},
+    # Gate 6 (workflow §10.4). Paths / command left null are auto-detected; integration.required:
+    # true | "auto" | false; require_tests false lowers "no changed tests" to WARN.
+    "test": {"coverage": {"diff_threshold": 80, "report_path": None}, "report_path": None,
+             "command": None, "require_tests": True, "integration": {"required": False}},
+    # Gate 6.5 (workflow §10.6): completion_gate "off" disables it; allow_deferred false also blocks "- [~]".
+    "tasks": {"completion_gate": "on", "allow_deferred": True},
+    # Set by `init-config --java` once quality-baseline.json exists; it never grows afterwards.
+    "quality_baseline_initialized": False,
     # quality.<check>: {"command": "...", "report_path": "..."}; written by init-config (§6.5).
     "quality": {},
     # agents.<name>.model: model override for the retry (§5).
