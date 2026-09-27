@@ -12,7 +12,7 @@ from .. import project as P
 from ..errors import ERROR, OK, fail
 from ..project import Project
 
-KEBAB = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+KEBAB = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")  # same rule as gate 0
 MIN_NAME = 5
 TEMPLATES = Path(__file__).resolve().parents[4] / "templates"
 PROPOSAL_TEMPLATE = {"feature": "proposal.md", "bugfix": "proposal-bugfix.md"}
@@ -82,7 +82,7 @@ def run(a) -> int:
         fail("仓库还没有任何提交，请先提交一次再开始")
     change = change_name(a)
     if not KEBAB.match(change) or len(change) < MIN_NAME:
-        fail("change 名「%s」必须是 kebab-case（小写字母、数字、连字符）且至少 %d 个字符" % (change, MIN_NAME))
+        fail("change 名「%s」必须是以小写字母开头的 kebab-case（小写字母、数字、连字符）且至少 %d 个字符" % (change, MIN_NAME))
     change_dir = project.change_dir(change)
     if change_dir.exists():
         fail("change「%s」已存在；继续它用 resume，或换一个名字" % change)

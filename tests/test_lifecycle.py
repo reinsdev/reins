@@ -50,7 +50,7 @@ class NewTest(unittest.TestCase):
 
     def test_rejections(self):
         with java_repo() as root:
-            for argv in (["new", "Bad_Name"], ["new", "abc"], ["new"], ["new", "--mode", "bugfix"]):
+            for argv in (["new", "Bad_Name"], ["new", "abc"], ["new", "2fa-login"], ["new"], ["new", "--mode", "bugfix"]):
                 self.assertEqual(cli(*argv)[0], ERROR, argv)
             cli("new", "twice-change", "--no-branch")
             self.assertIn("已存在", cli("new", "twice-change", "--no-branch")[1])
