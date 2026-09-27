@@ -42,6 +42,7 @@
 2. 填 `ALIASES`：模板里每个会被 gate 查找的章节一个键（如 `out-of-scope`、`user-stories`、`ambiguities`、`field-mapping`、`interface-contract`、`data-model`、`final-choice`…）。每个键的第一个变体必须和模板标题完全一致；兼容中英文和常见写法。
 3. 实现 `parse / find / find_all / ids / tables / checkboxes` 和 `Section.text()`，行为以 docstring 为准。忽略围栏代码块里的标题和 ID；兼容 CRLF；表格支持转义竖线。
 4. 在本文件末尾的「别名索引」一节列出所有键和对应模板标题（这是本任务唯一允许改的 docs 文件段落）。
+5. 补充（契约新增）：按 architecture.md §4.2、§4.4 增加 ALIASES 键 `findings`（问题清单）、`sc-results`（SC 验证结果）、`bugfix-upgrade`（bugfix 升级判定）、`new-violations`（新增违规）、`baseline-violations`（存量违规）、`repaid-violations`（已偿还），并同步别名索引；`bugfix-analysis.md`、`proposal-bugfix.md` 标题里的占位符改为 `<change-name>`（`new` 只替换它）。
 
 **验收**
 - 每个模板经 `parse()` 后，`ALIASES` 里的每个键都能 `find()` 到。
@@ -95,9 +96,9 @@
 **拥有的文件**：`gates/g5.py`、`g7.py`、`g8.py`、`g8_5.py`、`g8_9.py`，`tests/test_gates_review.py`，`tests/fixtures/t4/`
 
 **要做的**
-- 报告类 gate（5、7、8）：首行 generated-by 标记（`locked=True`）；扫描「主线自评」「直接根据代码验证」等降级措辞（`locked=True`）；解析 BLOCK / WARN 计数（报告格式以 T9 的评审模板为准，未合入前按设计文档 §5 自拟并在交付说明里注明）。
+- 报告类 gate（5、7、8）：首行 generated-by 标记（`locked=True`）；扫描「主线自评」「直接根据代码验证」等降级措辞（`locked=True`）；报告格式严格按 architecture.md §4.2 解析（结论表、问题清单、SC 验证结果、bugfix 升级判定），缺失或不合法一律 BLOCK。
 - gate 7：spec.md 的每个 SC 在 qa-report 里都是 PASS。
-- gate 8：WARN 条目已进 retrospective 待优化清单，用 `retro.todos()` 读取，不要自己解析 retrospective.md。
+- gate 8：问题清单里每条 WARN 的「问题」原文都在 `retro.todos()` 里（完全相等，见 architecture.md §4.2），不要自己解析 retrospective.md。
 - gate 8.5、8.9：按设计文档 §6.2；8.9 的 `uatAccepted` 检查 `locked=True`。
 
 **验收**：同 T3。
@@ -113,7 +114,8 @@
 **要做的**
 - gate 6：新增或改动了 `src/test/java` 下的文件；surefire / Gradle 测试报告里运行数 > 0；识别 `-DskipTests`、`-Dmaven.test.skip`、`-x test`、pom 里的 surefire `<skip>`；implementation-log.md 存在；JaCoCo 增量覆盖率（只算 `baseCommit` 以来改动的行）低于 `test.coverage.diff_threshold` 时 BLOCK，`evidence` 放覆盖率数值和未覆盖行清单（不含行号以外的易变内容）。
 - gate 6.5：用 `taskstate.done_tasks()` + `open_tasks()` 判定，不读复选框原样；S 档 WARN，其余 BLOCK。
-- gate 6.7：设计文档 §6.5 全部；所有 Finding `locked=True`；产出 `static-analysis-report.md` 是本 gate 唯一允许的写文件操作（在模块顶部注释说明这个例外）。
+- gate 6.7：设计文档 §6.5 全部；所有 Finding `locked=True`；产出 `static-analysis-report.md`（格式见 architecture.md §4.4）是本 gate 唯一允许的写文件操作（在模块顶部注释说明这个例外）。
+- gate 6 读提交 trailer 按 architecture.md §4.3（RED 先于 GREEN、Task-Id）。
 - `init-config --java`：写 `.config.json` 的 `quality` 块，跑检查生成 `quality-baseline.json`。
 
 **验收**：fixture 里放真实格式的 surefire XML、JaCoCo XML、Checkstyle / PMD / SpotBugs XML、SQLFluff JSON 样本（手写小样本即可，不需要真跑 Maven）。
@@ -171,7 +173,8 @@
 1. 总控 `references/`：每个 Phase 一份细则（进入条件、调用谁、结束时跑哪个 gate）；`subagent-protocol.md`（设计文档 §5 的调度模板，只传路径）。SKILL.md 主体保持精简，细节下沉 references，按 Phase 读取。
 2. 7 个主链 skill：各自 Phase 的对话步骤和工件写法，严格按 T1 模板；每个 skill 结尾写明「交回总控，由总控跑 gate」。
 3. bugfix 变种：写 bugfix-analysis.md 与 proposal.md，Phase 2/3 条件性瘦身。
-4. `tdd-implement`、`tiered-code-review` 是给 agent 读的规范（RED→GREEN→REFACTOR、Task-Id trailer；分级规则与检查清单）。
+4. `tdd-implement`、`tiered-code-review` 是给 agent 读的规范（RED→GREEN→REFACTOR；提交 trailer 严格按 architecture.md §4.3；分级规则与检查清单）。
+5. 总控 Phase 8 细则：code-review 的每条 WARN 用 `retro add --source "code-review WARN" "<问题原文>"` 记入待优化清单（architecture.md §4.2）。
 
 **验收**
 - 每个 skill 的 frontmatter 能被 `frontmatter.parse()` 解析，`name` 与目录同名（补进 `tests/test_plugin.py` 的检查由协调者做，你在交付说明里列出新 skill）。
@@ -186,8 +189,8 @@
 
 **要做的**
 - 每个 agent：角色、输入（只有路径）、必须遵守的约束（只写自己的报告、不改代码 / 工件、失败时怎么报告）、检查清单、报告格式。
-- 报告模板：首行 generated-by 标记；BLOCK / WARN / INFO 分级，每条带位置和建议；gate 要解析的计数和结论放在固定标题下（与 T4 对齐，交付说明里写清楚格式）。
-- implementation-generator：读 `tdd-implement` 规范（T8），每个任务一次提交，带 `Task-Id` trailer，只改任务 scope 内的文件。
+- 报告模板：严格按 architecture.md §4.2 写 spec-review、qa-report、code-review 三份模板；agent 的输出要求逐条对应该节（首行标记、结论表、问题清单、SC 验证结果、bugfix 升级判定）。code-reviewer 先读 static-analysis-report.md（§4.4）。
+- implementation-generator：读 `tdd-implement` 规范（T8），提交 trailer 按 architecture.md §4.3，只改任务 scope 内的文件。
 - 保持 `tools` 与 `access` 一致（`tests/test_plugin.py` 会查）。
 
 **验收**：`test_plugin.py` 通过；每个 agent 的约束能对应到 T6 的 policy 或 T4 的 gate 检查（在交付说明里列对应关系）。

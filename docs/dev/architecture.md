@@ -205,6 +205,93 @@ Finding(level="BLOCK", check="ac-mapped", reason="AC-3 没有映射到任何 SC"
 - 入口 skill 设 `disable-model-invocation: true` 时只能用户触发；总控设了 `user-invocable: false`，只能模型触发。
 - skill 调 CLI 的写法：`<spec-driven-dev skill 目录>/scripts/spec-driven <命令>`。
 
+### 4.1 跨任务共用格式（契约）
+
+凡是「一个任务写、另一个任务读」的格式都在这里定义，写的一方和读的一方都以本节为准，不以对方的实现为准。要改格式，先改本节（协调者），再各自跟进。
+
+| 格式 | 写的一方 | 读的一方 |
+| --- | --- | --- |
+| 评审报告（§4.2） | T9 的 agent 与报告模板 | T4 的 gate 5 / 7 / 8 |
+| 提交 trailer（§4.3） | T8 的 tdd-implement、T9 的 implementation-generator | T2 的 taskstate、T6 的 commit-msg、T5 的 gate 6 |
+| 静态分析报告（§4.4） | T5 的 gate 6.7 | T9 的 code-reviewer |
+
+标题一律经 `mdparse.find()` 按下文给出的 ALIASES 键查找，表格一律经 `mdparse.tables()` 读取。
+
+### 4.2 评审报告：spec-review.md / qa-report.md / code-review.md
+
+三份报告的骨架相同：
+
+```markdown
+<!-- generated-by: code-reviewer-subagent -->
+# Code Review: <change-name>
+
+## 结论
+
+| BLOCK | WARN | INFO |
+| --- | --- | --- |
+| 1 | 2 | 0 |
+
+## 问题清单
+
+| 级别 | 位置 | 问题 | 建议 |
+| --- | --- | --- | --- |
+| BLOCK | src/main/java/…/OrderService.java:42 | 批量审批没有校验状态 | 调用前检查 PolicyStatus |
+| WARN | … | … | … |
+```
+
+- **首行**：第一个非空行必须恰好是 `<!-- generated-by: <agent 名>-subagent -->`，agent 名为 `spec-evaluator`、`qa-evaluator`、`code-reviewer`。
+- **标题**：`# Spec Review` / `# QA Report` / `# Code Review`，冒号后是 change 名。
+- **`## 结论`**（ALIASES 键 `conclusion`）：只有一张表，表头恰好是 `BLOCK | WARN | INFO`，一行，三个非负整数。
+- **`## 问题清单`**（键 `findings`）：只有一张表，表头恰好是 `级别 | 位置 | 问题 | 建议`；「级别」只能是 `BLOCK`、`WARN`、`INFO`；「位置」写 `文件:行` 或 `-`。没有问题时保留表头、不写数据行。
+- **一致性**：结论表的三个数必须等于问题清单里对应级别的行数。
+- **qa-report 另有 `## SC 验证结果`**（键 `sc-results`）：表头恰好是 `SC | 结果 | 证据`；spec.md 里每个 SC 一行；「SC」只写 ID（如 `SC-policy-approval-001`），「结果」只能是 `PASS` 或 `FAIL`。
+- **spec-review 在 bugfix 模式下另有 `## bugfix 升级判定`**（键 `bugfix-upgrade`）：第一个非空行恰好是 `保持 bugfix` 或 `应升级 design`。
+- **其他小节**（评审范围、说明等）可以自由写，gate 不读。报告里其他地方出现 `[BLOCK]` 之类文字不计数。
+- **读取规则（gate）**：
+  - 以上任何必需的小节、表格、表头缺失或取值不合法，都是 BLOCK，原因写清楚哪一项不合格。不能当成「0 个问题」放行。
+  - 结论表与问题清单的计数不一致是 BLOCK。
+  - gate 8 的「WARN 已进待优化清单」：问题清单里每个 WARN 行的「问题」原文，都必须作为一条内容出现在 `retro.todos()` 里（完全相等）。总控对每条 WARN 执行 `spec-driven retro add --source "code-review WARN" "<问题原文>"`。
+- **多轮评审**（L 档 spec 评审两轮）：每轮覆盖写同一个文件，gate 只看最新内容。
+
+### 4.3 提交 trailer
+
+- **`Task-Id: <任务 ID>`**：任务 ID 为 `T<数字>` 或 `T-regression`，一个提交涉及多个任务时用逗号分隔（`Task-Id: T3, T4`）。Phase 6 里改动了 `.openspec/` 以外文件的提交必须带（commit-msg hook 强制）。
+- **`TDD-Phase: RED | GREEN | REFACTOR`**：RED 提交必须带 `TDD-Phase: RED`（兼容标题以 `RED:` 开头的写法）；GREEN、REFACTOR 建议带。
+- **完成判定**：任务完成 = 自 `baseCommit` 以来存在带该 `Task-Id` 的非 RED 提交（`taskstate.done_tasks()`）。RED 提交只证明测试先于实现，不算完成。
+- trailer 写在提交信息最后一段，与正文空一行，按 `git interpret-trailers` 的规则解析。
+
+### 4.4 静态分析报告：static-analysis-report.md
+
+由 gate 6.7 生成（CLI 写入，不是 agent 产出），code-reviewer 在 Phase 8 先读它，已被机器抓到的问题不重复标记。
+
+```markdown
+<!-- generated-by: spec-driven gate-6.7 -->
+# Static Analysis: <change-name>
+
+## 结论
+
+| 新增 | 存量 | 已偿还 |
+| --- | --- | --- |
+| 2 | 15 | 1 |
+
+## 新增违规
+
+| 检查 | 规则 | 位置 | 说明 |
+| --- | --- | --- | --- |
+| checkstyle | LineLength | src/main/java/…/A.java:12 | 行长 132 > 120 |
+
+## 存量违规
+
+（同上表头）
+
+## 已偿还
+
+（同上表头）
+```
+
+- ALIASES 键：`conclusion`、`new-violations`（新增违规）、`baseline-violations`（存量违规）、`repaid-violations`（已偿还）。
+- 「检查」取值：`archunit`、`checkstyle`、`spotbugs`、`pmd`、`sqlfluff`，与 `.config.json` 的 `quality.<检查>` 键一致。
+
 ---
 
 ## 5. 按场景开发
