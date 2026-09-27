@@ -60,3 +60,9 @@ Phase 8.9 用户要求修改时按上面的 `uat reject` 流程执行，不再�
 ```
 
 确认目标 Phase 可写后才委派修改。CLI 负责修订标记、解除冻结和下游 stale；所有受影响的下游工件重新生成或评审，并重新过门。已归档 change 不回退，新缺陷重新走 bugfix。
+
+## 质量工具首次接入
+
+总控调用 `<spec-driven-dev skill 目录>/scripts/spec-driven quality setup --dry-run` 展示具体改动。用户同意改 pom 后才能执行 `quality setup`，用户同意联网后才能加 `--online`；已有明确授权不重复询问。默认离线只写接入文件并返回 2，联网预热成功返回 0，随后仍需 `init-config --java` 建基线。不得把预热成功当作 gate 通过。
+
+`--base-package`、`--junit`、`--sql-dialect` 传递用户确认的选择。有 SQL 时展示 JDBC 方言候选，生成 `.sqlfluff`；已有文件只显示差异，不覆盖。`quality show` 只读显示团队配置。Gradle 自动接入暂不支持，不绕过检查或伪造报告。

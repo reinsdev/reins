@@ -1,0 +1,24 @@
+[sqlfluff]
+dialect = <dialect>
+templater = placeholder
+rules = CP01, CP02, CP03, CP04, AM04, RF02, LT05
+exclude_rules = AL01, AL02, LT02
+warnings = LT05
+max_line_length = 120
+
+[sqlfluff:templater:placeholder]
+# Accept both MyBatis parameters and the question marks emitted by extraction.
+# Positional matching avoids treating jdbcType metadata as SQL identifiers.
+param_regex = #\{[^}]+\}|\?
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = consistent
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = consistent
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = consistent

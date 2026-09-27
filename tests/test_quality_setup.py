@@ -179,10 +179,111 @@ class QualitySetupTest(unittest.TestCase):
     def test_sql_without_sqlfluff_gives_actionable_dialect_guidance(self):
         self.write("src/main/resources/db/migration/V1.sql", "select 1;")
         with mock.patch("shutil.which", return_value=None):
-            code, output = cli("quality", "setup", "--dry-run")
+            code, output = cli("quality", "setup", "--sql-dialect", "postgres", "--dry-run")
         self.assertEqual(0, code, output)
         self.assertIn("sqlfluff", output)
         self.assertIn("dialect", output)
+
+    def test_lowercase_mybatis_mapper_requires_sqlfluff(self):
+        self.write("src/main/resources/queries.xml", '<mapper namespace="demo.Query"><select id="q">select 1</select></mapper>')
+        with mock.patch("shutil.which", return_value=None):
+            code, output = cli("quality", "setup", "--sql-dialect", "postgres", "--dry-run")
+        self.assertEqual(0, code, output)
+        self.assertIn("SQLFluff 未安装", output)
+
+    def test_sql_dialect_requires_confirmation_even_when_driver_is_known(self):
+        self.write("src/main/resources/V1.sql", "select 1;")
+        self.write("pom.xml", POM.replace("</dependencies>", "<dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency></dependencies>"))
+        before = self.snapshot()
+        code, output = cli("quality", "setup")
+        self.assertEqual(1, code, output)
+        self.assertIn("postgres", output)
+        self.assertIn("--sql-dialect", output)
+        self.assertEqual(before, self.snapshot())
+
+    def test_sql_config_created_transactionally_and_preserved(self):
+        self.write("src/main/resources/V1.sql", "select 1;")
+        code, output = cli("quality", "setup", "--sql-dialect", "mysql")
+        self.assertEqual(2, code, output)
+        path = self.root / ".sqlfluff"
+        config = path.read_text(encoding="utf-8")
+        self.assertIn("dialect = mysql", config)
+        self.assertIn("warnings = LT05", config)
+        self.assertIn("max_line_length = 120", config)
+        before = self.snapshot()
+        self.assertEqual(2, cli("quality", "setup")[0])
+        self.assertEqual(before, self.snapshot())
+        self.write(".sqlfluff", config + "\n# team custom settings\n")
+        before = self.snapshot()
+        code, output = cli("quality", "setup", "--sql-dialect", "postgres")
+        self.assertEqual(2, code, output)
+        self.assertIn("不覆盖", output)
+        self.assertIn("+dialect = postgres", output)
+        self.assertEqual(before, self.snapshot())
+
+    def test_online_failure_removes_generated_sql_configuration(self):
+        from spec_driven import java_setup
+        self.write("src/main/resources/V1.sql", "select 1;")
+        before = self.snapshot()
+        with mock.patch.object(java_setup, "warm", side_effect=RuntimeError("download failed")):
+            self.assertEqual(1, cli("quality", "setup", "--sql-dialect", "oracle", "--online")[0])
+        self.assertEqual(before, self.snapshot())
+
+    def test_xml_insert_handles_namespaces_empty_container_and_management(self):
+        from spec_driven import java_setup
+        for text in (
+            '<project><dependencies /></project>',
+            '<p:project xmlns:p="urn:p"><p:dependencies /></p:project>',
+            '<project><dependencyManagement><dependencies /></dependencyManagement></project>',
+        ):
+            updated = java_setup.insert_dependency(text, "archunit-junit5")
+            tree = ET.fromstring(updated)
+            self.assertEqual(1, len(tree.findall("{*}dependencies/{*}dependency")))
+            self.assertIn("archunit-junit5", updated)
+
+    def test_conditional_modules_and_conflicting_junit_require_confirmation(self):
+        self.write("pom.xml", POM.replace("</project>", "<profiles><profile><modules><module>optional</module></modules></profile></profiles></project>"))
+        before = self.snapshot()
+        self.assertEqual(1, cli("quality", "setup")[0])
+        self.assertEqual(before, self.snapshot())
+        self.write("pom.xml", POM.replace("</dependencies>", "<dependency><groupId>junit</groupId><artifactId>junit</artifactId><version>4.13.2</version></dependency></dependencies>"))
+        self.assertEqual(1, cli("quality", "setup")[0])
+        self.assertEqual(0, cli("quality", "setup", "--junit", "5", "--dry-run")[0])
+
+    def test_existing_backup_conflict_is_not_overwritten(self):
+        self.write("pom.xml.reins-bak", "old unrelated backup")
+        before = self.snapshot()
+        code, output = cli("quality", "setup")
+        self.assertEqual(1, code, output)
+        self.assertIn("不覆盖", output)
+        self.assertEqual(before, self.snapshot())
+
+    def test_show_does_not_create_configuration(self):
+        before = self.snapshot()
+        code, output = cli("quality", "show")
+        self.assertEqual(0, code, output)
+        self.assertEqual({}, json.loads(output))
+        self.assertEqual(before, self.snapshot())
+
+    def test_online_tool_failure_keeps_log_and_restores_managed_files(self):
+        before = self.snapshot()
+        failed = mock.Mock(returncode=1, stdout="download failed", stderr="network unavailable")
+        with mock.patch("subprocess.run", return_value=failed) as run:
+            code, output = cli("quality", "setup", "--online")
+        self.assertEqual(1, code, output)
+        self.assertNotIn("-o", run.call_args[0][0])
+        self.assertTrue((self.root / ".openspec/quality-setup-logs/archunit.log").exists())
+        after = {p: value for p, value in self.snapshot().items() if "/quality-setup-logs/" not in p}
+        self.assertEqual(before, after)
+
+    def test_forced_offline_online_request_stops_and_rolls_back(self):
+        self.write(".mvn/maven.config", "--offline\n")
+        before = self.snapshot()
+        with mock.patch("subprocess.run", side_effect=AssertionError("must not run")):
+            code, output = cli("quality", "setup", "--online")
+        self.assertEqual(1, code, output)
+        self.assertIn("强制离线", output)
+        self.assertEqual(before, self.snapshot())
 
 
 if __name__ == "__main__":

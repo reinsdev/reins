@@ -7,9 +7,13 @@ python3 tools/e2e/run.py --flows B C
 python3 tools/e2e/run.py --online
 python3 tools/e2e/run.py --maven-repo /path/to/offline-repository
 python3 tools/e2e/run.py --diagnose
+python3 tools/e2e/run.py --flows Q Q4 --online
+python3 tools/e2e/check_sqlfluff.py --sqlfluff /path/to/sqlfluff
 ```
 
-- 默认离线。POM 锁定 Surefire 3.5.4、JaCoCo 0.8.12、JUnit 5.12.2。`--online` 允许下载 Maven 依赖，不会给项目编写 ArchUnit 规则或安装其他质量工具。
+- 默认离线。POM 锁定 Surefire 3.5.4、JaCoCo 0.8.12、JUnit 5.12.2（Q4 使用 JUnit 4.13.2）。`--online` 允许下载 Maven 依赖。默认仍运行 A/B/C；Q/Q4 专门验证质量接入。
+- Q/Q4 先预览并执行 `quality setup`，验证重复执行文件不变，再初始化基线，检查 gate 6.7 通过、新增 Checkstyle 违规拦截、恢复后通过、新增分层依赖违规拦截。ArchUnit、Checkstyle、PMD、SpotBugs 的 XML 都由真实工具生成；插件版本和属性见 [T16 验证记录](T16-evidence.md)。
+- `check_sqlfluff.py` 使用单独安装的 SQLFluff，在临时目录验证模板参数、CP01、AM04、RF02、LT05 告警和隐式别名；不自动安装依赖。
 - 缺 JDK/Maven 时停止；依赖缺失、真实构建失败时记录失败。某一流程失败后继续另外两条独立流程。
 - 默认遇到非预期结果即停止该流程，最终退出 1；全部符合预期才退出 0。
 - `--diagnose` 仅作用于脚本新建的 A 项目。记录原始失败后，模拟 UserPromptSubmit 口令并调用 waive，以探查后续阶段。任何诊断偏差都会让最终退出码保持 1。B 中的放行则是用例本身的预期行为。

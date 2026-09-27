@@ -1,6 +1,7 @@
 """Maven quality onboarding. Owner: T16; no changes to gate execution."""
 
 import copy
+import configparser
 import difflib
 import json
 import os
@@ -9,7 +10,7 @@ import re
 import shlex
 import shutil
 import subprocess
-from typing import Dict, List
+from typing import Dict, List, Optional
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
 
@@ -205,7 +206,7 @@ class Plan:
     def __init__(self, root):
         self.root = root
         self.changes = {}  # type: Dict[Path, str]
-        self.originals = {}  # type: Dict[Path, bytes]
+        self.originals = {}  # type: Dict[Path, Optional[bytes]]
         self.poms = []  # type: List[Path]
         self.notes = []  # type: List[str]
         self.quality = {}
@@ -229,7 +230,55 @@ class Plan:
         return "\n".join(parts) if parts else "接入文件已存在，无需修改。"
 
 
-def plan(root, confirmed_package=None, confirmed_junit=None):
+def sql_config(result, reactor, confirmed):
+    """Require dialect confirmation before generating the team's SQL defaults."""
+    root = result.root
+    sql = list(root.glob("**/src/main/resources/**/*.sql"))
+    for path in root.glob("**/src/main/resources/**/*.xml"):
+        if re.search(r"<mapper(?:\s|>)", read_text(path)):
+            sql.append(path)
+    if not sql:
+        result.notes.append("未发现 SQL 文件；无 SQL/MyBatis 资源时可以不装 SQLFluff，不生成 .sqlfluff。")
+        return
+    available = bool(shutil.which("sqlfluff"))
+    guidance = "SQLFluff 已可用。" if available else "SQLFluff 未安装：由用户运行 pip install sqlfluff。"
+    path = root / ".sqlfluff"
+    existing = read_text(path) if path.exists() else None
+    dialect = confirmed
+    if not dialect and existing is not None:
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read_string(existing)
+            dialect = parser.get("sqlfluff", "dialect", fallback=None)
+        except configparser.Error as exc:
+            raise ValueError("已有 .sqlfluff 无法解析，不覆盖：%s" % exc)
+    if not dialect:
+        drivers = {"mysql:mysql-connector-java": "mysql", "com.mysql:mysql-connector-j": "mysql",
+                   "org.postgresql:postgresql": "postgres", "org.mariadb.jdbc:mariadb-java-client": "mysql",
+                   "com.microsoft.sqlserver:mssql-jdbc": "tsql"}
+        candidates = set()
+        for directory, tree in reactor:
+            for dep in tree.findall(".//{*}dependency"):
+                key = "%s:%s" % (dep.findtext("{*}groupId", ""), dep.findtext("{*}artifactId", ""))
+                if key in drivers:
+                    candidates.add(drivers[key])
+                if key.startswith("com.oracle.database.jdbc:ojdbc") or key.startswith("com.oracle:ojdbc"):
+                    candidates.add("oracle")
+        raise ValueError("%s JDBC 方言候选：%s；请用户确认后用 --sql-dialect <dialect> 重试，未写任何文件。" %
+                         (guidance, ", ".join(sorted(candidates)) or "未识别"))
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", dialect):
+        raise ValueError("SQLFluff dialect 名称无效：%s" % dialect)
+    proposed = read_text(TEMPLATES / "sqlfluff.template").replace("<dialect>", dialect)
+    result.notes.append(guidance)
+    if existing is None:
+        result.add(path, proposed)
+    else:
+        difference = "".join(difflib.unified_diff(existing.splitlines(True), proposed.splitlines(True),
+                                              fromfile=".sqlfluff（现有）", tofile=".sqlfluff（团队默认建议）"))
+        result.notes.append(".sqlfluff 已存在，不覆盖；与团队默认的差异：\n%s" % (difference or "无"))
+
+
+def plan(root, confirmed_package=None, confirmed_junit=None, confirmed_dialect=None):
     root = root.resolve()
     if java.detect_build(root) != "maven":
         raise ValueError("Gradle 自动接入暂不支持。请手工配置 checkstyle、pmd、com.github.spotbugs 插件，添加 ArchUnit 测试及冻结规则，配置 quality 的命令和报告路径后再执行 init-config --java。")
@@ -265,7 +314,7 @@ def plan(root, confirmed_package=None, confirmed_junit=None):
             text = read_text(TEMPLATES / "ReinsArchTest.java.template")
             store = Path(os.path.relpath(root / ".openspec/archunit-store" / (name if name != "." else "root"), directory)).as_posix()
             text = text.replace("<base-package>", package).replace("<junit-import>", "org.junit.jupiter.api.Test" if junit == "5" else "org.junit.Test")
-            result.add(test, text.replace("<freeze-store>", store))
+            result.add(test, text.replace("<freeze-store>", json.dumps(store)[1:-1]))
     if not selected:
         raise ValueError("没有含 src/main/java 业务源码的 Maven 模块，无法接入")
     quality = copy.deepcopy(java.quality_defaults(root))
@@ -286,13 +335,7 @@ def plan(root, confirmed_package=None, confirmed_junit=None):
     config["quality"] = quality
     result.quality = quality
     result.add(root / ".openspec/.config.json", json.dumps(config, ensure_ascii=False, indent=2) + "\n")
-    sql = list(root.glob("**/src/main/resources/**/*.sql")) + list(root.glob("**/src/main/resources/**/*Mapper.xml"))
-    if not sql:
-        result.notes.append("未发现 SQL 文件；无 SQL/MyBatis 资源时可以不装 SQLFluff。")
-    elif not shutil.which("sqlfluff"):
-        result.notes.append("SQLFluff 未安装：由用户运行 pip install sqlfluff，并在 .sqlfluff 配置 [sqlfluff] / dialect = <实际数据库方言，如 postgres/mysql>；数据库无法自动确认，不写猜测的方言。")
-    else:
-        result.notes.append("SQLFluff 已可用；请确认 .sqlfluff 的 dialect 与项目数据库一致。")
+    sql_config(result, reactor, confirmed_dialect)
     return result
 
 
