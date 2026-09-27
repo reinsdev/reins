@@ -5,7 +5,8 @@
 //   skills/{spec,bugfix,waive}   → /spec, /bugfix, /waive commands
 //   skills/                      → added to skills.paths
 // tool.execute.before forwards each tool call to the bundled spec-driven CLI,
-// which decides; exit code 2 means block.
+// which decides; exit code 2 means block. chat.message forwards the user's own
+// messages (prompt-submit), which is how a confirmation phrase issues a grant.
 import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -103,7 +104,28 @@ function ask(event, payload) {
   return (r.stderr || "blocked by Reins").trim()
 }
 
-export const ReinsPlugin = async ({ directory }) => ({
+// Only messages the user typed in a top-level session count. A subagent session's
+// first message is written by the parent model, so forwarding it would let the model
+// forge a confirmation phrase; when we cannot tell, we do not forward.
+async function isUserSession(client, sessionID) {
+  if (!client || !sessionID) return false
+  try {
+    const r = await client.session.get({ path: { id: sessionID } })
+    return Boolean(r && r.data) && !r.data.parentID
+  } catch {
+    return false
+  }
+}
+
+export function userText(parts) {
+  return (parts || [])
+    .filter((p) => p && p.type === "text" && !p.synthetic)
+    .map((p) => p.text || "")
+    .join("\n")
+    .trim()
+}
+
+export const ReinsPlugin = async ({ directory, client }) => ({
   config: async (cfg) => {
     const { agents, commands } = loadContent()
     // The user's own definitions win over Reins defaults.
@@ -121,5 +143,15 @@ export const ReinsPlugin = async ({ directory }) => ({
       cwd: directory,
     })
     if (reason) throw new Error(reason)
+  },
+  "chat.message": async (input, output) => {
+    const prompt = userText(output.parts)
+    if (!prompt || !(await isUserSession(client, input.sessionID))) return
+    ask("prompt-submit", {
+      hook_event_name: "UserPromptSubmit",
+      prompt,
+      session_id: input.sessionID,
+      cwd: directory,
+    })
   },
 })

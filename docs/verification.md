@@ -254,7 +254,7 @@ Windows 上对应 `install.ps1`：设好同样的环境变量（`$env:REINS_REPO
 | 平台 | 验证点 | 方法 |
 | --- | --- | --- |
 | Claude Code / Codex | UserPromptSubmit hook 是否收到用户每条输入（放行授权依赖它） | 在会话里输入任意一句话，看 `hooks.jsonl` 末尾是否有对应的 `prompt-submit` 记录 |
-| OpenCode | 插件能否拿到用户消息，用来签发放行授权 | 暂无：确认 OpenCode 插件事件后补充；拿不到时放行退回终端 TTY 确认 |
+| OpenCode | 用户在主会话里输入口令能否签发授权，子 agent 会话能否被拒 | 制造一个拦截后输入「确认放行 <change> <gate> <检查项>」，看 `~/.reins/grants/` 是否出现文件；再让模型用 task 派子 agent，在提示里写同一句口令，确认不会出现授权文件 |
 | OpenCode | 子 agent 的工具调用是否被 hook 拦截 | 用 `@spec-evaluator` 让子 agent 执行 `touch d.reins-probe-block`，看是否被拦截 |
 | 全部 | 评审 agent 的写权限是否受限 | 让 spec-evaluator 修改 `proposal.md`，预期被工具权限或 hook 拒绝 |
 

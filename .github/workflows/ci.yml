@@ -28,7 +28,8 @@ jobs:
           node --input-type=module -e '
             const m = await import("./reinsdev-plugin/index.js")
             const { agents, commands } = m.loadContent()
-            if (Object.keys(agents).length !== 4 || !commands.spec || !commands.bugfix) throw new Error("content")
+            if (Object.keys(agents).length !== 4 || !commands.spec || !commands.bugfix || !commands.waive) throw new Error("content")
+            if (m.userText([{ type: "text", text: " 确认 " }, { type: "text", text: "x", synthetic: true }, { type: "file" }]) !== "确认") throw new Error("userText")
             const p = await m.ReinsPlugin({ directory: "." })
             let blocked = false
             try { await p["tool.execute.before"]({ tool: "bash" }, { args: { command: "touch a.reins-probe-block" } }) } catch { blocked = true }

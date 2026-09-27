@@ -157,13 +157,15 @@ agent 的工具权限用**能力级别**（`access`）描述；Claude Code 直�
 
 | 护栏 | 第 1 层：CLI 自身（所有平台） | 第 2 层：git hook（所有平台） | 第 3 层：平台 hook（有则用） |
 | --- | --- | --- | --- |
-| 验证门 | 总控主循环显式调用 `spec-driven gate` | pre-commit：当前 Phase 的 gate 未通过时拒绝提交 | 用户输入关键字时自动触发 gate-router |
-| 上游冻结 / 路径锁 | gate 比对冻结工件的 hash，被改动即 BLOCK | pre-commit：拒绝提交对冻结工件和 retrospective.md 的非 CLI 改动 | 编辑前直接拦截（spec-gate） |
-| 只有用户能豁免 / 降档 | `waive` 和 `complexity set --downgrade` 必须消费一次性授权，否则拒绝执行（§6.6） | commit-msg：没有 CLI 签名的 retrospective 改动拒绝提交 | UserPromptSubmit 只在用户本人输入确认口令时签发授权；编辑前 hook 禁止模型改动授权文件。没有提示词 hook 的平台退回终端 TTY 确认 |
+| 验证门 | 总控主循环显式调用 `spec-driven gate`；`advance` 过门后才推进 Phase | —（不在提交时跑 gate：Phase 6 的 TDD 需要中间提交，见下文说明） | 用户输入关键字时自动触发 gate-router |
+| 上游冻结 / 路径锁 | gate 比对冻结工件的 hash，被改动即 BLOCK | pre-commit：已进入 HEAD 的冻结工件再被改动时拒绝提交 | 编辑前直接拦截（spec-gate）；shell 写入由 bash-guard 拦截 |
+| 只有用户能豁免 / 降档 | `waive` 和 `complexity set --downgrade` 必须消费一次性授权，否则拒绝执行（§6.6） | pre-commit：retrospective.md 的内容哈希与 CLI 最后一次写入的签名不一致时拒绝提交 | 用户本人输入确认口令时签发授权（Claude Code、Codex 用 UserPromptSubmit；OpenCode 用 chat.message，只认顶层会话）；编辑前 hook 与 bash-guard 禁止模型改动授权文件。拿不到用户消息时退回终端 TTY 确认 |
 | 评审者隔离 | — | — | 有「子 agent + 工具限制」时用子 agent；没有时退为**另起一个无头进程**跑评审（如 `claude -p`、`codex exec`、`opencode run`），用只读沙箱，报告仍经 `generated-by` 标记校验 |
-| Task-Id / 测试真跑 | gate-6 / gate-6.5 读 git 历史判定 | commit-msg 校验 trailer | — |
+| Task-Id / 测试真跑 | gate-6 / gate-6.5 读 git 历史判定 | commit-msg：Phase 6 的代码提交必须带 `Task-Id` trailer | bash-guard 拦截 `git commit --no-verify` 和改 `core.hooksPath` |
 
 `reinsdev doctor` 逐条输出「这条护栏在当前平台由哪一层落实」。某条护栏只剩第 1 层时，要明确打印提示，不能默默降级。
+
+git 层不在提交时跑当前 Phase 的 gate：Phase 6 按 TDD 节奏每个任务都要提交（包括失败测试的 RED 提交），而 gate-6 要到任务全部完成才通过，提交时拦截会让实现无法进行。「过门才能前进」由 `advance` 保证：gate 不通过，Phase 不推进，后续工件也进不了冻结和评审流程。
 
 ### 2.5 构建、发布与安装
 
@@ -465,7 +467,8 @@ Phase 6 默认串行：每个任务派一个 implementation-generator，主线�
 - **授权只来自用户输入**：只有 UserPromptSubmit 能签发授权，模型的输出、工具结果都不经过它。口令带 change 名和检查项，用户随口说「放行」「可以」不会签发；说「不要放行」只会触发 waive skill，不会签发。
 - **授权文件受保护**：编辑前 hook 禁止模型写 `~/.reins/grants/`，bash-guard 拦截对它的 shell 写入。
 - **retrospective.md 只能经 CLI 写入**：禁止模型直接编辑（§6.4）。
-- **没有提示词 hook 的平台**（OpenCode 需实测插件能否拿到用户消息）：退回原方案，由用户本人在自己的终端执行 `spec-driven waive`，命令要求在 TTY 里输入 change 名确认。这是用户唯一会直接接触 `spec-driven` 的场合，`doctor` 会标出。
+- **OpenCode**：插件的 `chat.message` 把用户消息转给同一条判定链。只转发顶层会话（没有 `parentID`）里、非系统生成的文本：子 agent 会话的第一条消息是父模型写的，转发它等于让模型自己签发授权；查询会话失败时一律不转发。
+- **拿不到用户消息时**：退回原方案，由用户本人在自己的终端执行 `spec-driven waive`，命令要求在 TTY 里输入 change 名确认。这是用户唯一会直接接触 `spec-driven` 的场合。
 
 ---
 

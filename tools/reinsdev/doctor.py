@@ -37,7 +37,7 @@ GUARDRAILS = {
     "opencode": {
         "验证门": ("CLI + git + 平台 hook", ""),
         "路径锁 / 上游冻结": ("JS 插件 tool.execute.before", "子 agent 调用是否被拦（#5894）：待实测"),
-        "只有用户能放行": ("终端 TTY 确认（退回方案）", "插件能否拿到用户消息以签发授权：待实测"),
+        "只有用户能放行": ("对话口令 + chat.message 授权（只认顶层会话）", "实机签发：待实测"),
         "评审者隔离": ("子 agent + permission", ""),
         "Windows hook": ("JS 插件直接调用 Python", ""),
     },
