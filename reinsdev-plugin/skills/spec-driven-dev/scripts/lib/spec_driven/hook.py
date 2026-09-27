@@ -40,7 +40,8 @@ def normalize(payload: dict, runtime: str) -> dict:
     for k in ("file_path", "filePath", "path", "notebook_path"):
         if isinstance(args.get(k), str):
             paths.append(args[k])
-    patch = args.get("patch") or args.get("input") or ""
+    # Codex sends the patch body of apply_patch in tool_input.command.
+    patch = args.get("patch") or args.get("input") or args.get("command") or ""
     if tool.lower() in ("apply_patch", "patch") and isinstance(patch, str):
         paths.extend(_PATCH_FILE.findall(patch))
     for e in args.get("edits") or []:  # multi-file edit shapes
@@ -50,7 +51,7 @@ def normalize(payload: dict, runtime: str) -> dict:
     # One separator everywhere so path rules work the same on Windows.
     paths = [p.replace("\\", "/") for p in paths]
 
-    command = args.get("command") or args.get("cmd") or ""
+    command = "" if kind == "edit" else (args.get("command") or args.get("cmd") or "")
     if isinstance(command, list):
         command = " ".join(str(c) for c in command)
 
@@ -63,6 +64,10 @@ def normalize(payload: dict, runtime: str) -> dict:
         "command": command,
         "prompt": payload.get("prompt") or "",
         "cwd": payload.get("cwd") or "",
+        # Subagent name without the plugin prefix ("reins:spec-evaluator" -> "spec-evaluator");
+        # "" on the main thread or when the runtime does not say (Codex and OpenCode
+        # PreToolUse payloads carry no agent identity).
+        "agent": str(payload.get("agent_type") or "").split(":")[-1],
     }
 
 

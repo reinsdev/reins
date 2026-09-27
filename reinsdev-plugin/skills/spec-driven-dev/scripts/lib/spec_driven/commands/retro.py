@@ -1,6 +1,8 @@
-"""`spec-driven retro`. Owner: T6. retro add：向 retrospective.md 待优化清单追加一条（retro.add_todo）。"""
+"""`spec-driven retro add`. Owner: T6. Append an item to retrospective.md 待优化清单."""
 
-from ..errors import unavailable
+from .. import locate, retro
+from ..errors import OK, fail
+from ..project import Project
 
 
 def register(sub):
@@ -12,4 +14,10 @@ def register(sub):
 
 
 def run(a) -> int:
-    return unavailable("retro")
+    project = Project.here()
+    change, change_dir, _ = locate.load(project, a.change)
+    if not a.text.strip():
+        fail("内容不能为空")
+    retro.add_todo(change_dir, a.source, a.text.strip())
+    print("已记入 %s 的待优化清单" % change)
+    return OK

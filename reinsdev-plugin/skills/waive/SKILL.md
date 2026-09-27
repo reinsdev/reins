@@ -16,7 +16,8 @@ argument-hint: "[<gate> <检查项>]"
    ```
 
    只有这句口令由用户本人发出时，平台的 UserPromptSubmit hook 才会签发一次性的放行授权。用户说「放行」「可以」「同意」都不算确认，继续请用户输入口令。
-5. 用户输入口令后，执行 `spec-driven waive <gate> <检查项> --reason "<用户给的理由>"`。命令消费授权，在 retrospective.md「人工确认记录」追加一行。命令报「没有有效授权」时，把原文告诉用户并停下，不要重试或绕过。
+5. 用户输入口令后，执行 `<spec-driven-dev skill 目录>/scripts/spec-driven waive <gate> <检查项> --reason "<用户给的理由>"`。命令消费授权，在 retrospective.md「人工确认记录」追加记录。命令报「没有有效授权」时，把原文告诉用户并停下，不要重试或绕过。
+   - 在 OpenCode 上口令可能无法签发授权。此时请用户在自己的终端运行同一条命令，按提示输入 change 名确认。
 6. 重跑对应 gate，确认该项显示 `[WAIVED]`，回到总控主循环。
 
 用户表达的是「不要放行」「先别放行」，或者放行不是用户提出的，都不执行本 skill 的第 4、5 步。
