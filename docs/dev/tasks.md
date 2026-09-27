@@ -42,7 +42,7 @@
 2. 填 `ALIASES`：模板里每个会被 gate 查找的章节一个键（如 `out-of-scope`、`user-stories`、`ambiguities`、`field-mapping`、`interface-contract`、`data-model`、`final-choice`…）。每个键的第一个变体必须和模板标题完全一致；兼容中英文和常见写法。
 3. 实现 `parse / find / find_all / ids / tables / checkboxes` 和 `Section.text()`，行为以 docstring 为准。忽略围栏代码块里的标题和 ID；兼容 CRLF；表格支持转义竖线。
 4. 在本文件末尾的「别名索引」一节列出所有键和对应模板标题（这是本任务唯一允许改的 docs 文件段落）。
-5. 补充（契约新增）：按 architecture.md §4.2、§4.4 增加 ALIASES 键 `findings`（问题清单）、`sc-results`（SC 验证结果）、`bugfix-upgrade`（bugfix 升级判定）、`new-violations`（新增违规）、`baseline-violations`（存量违规）、`repaid-violations`（已偿还），并同步别名索引；`bugfix-analysis.md`、`proposal-bugfix.md` 标题里的占位符改为 `<change-name>`（`new` 只替换它）。
+5. 补充（契约新增）：协调者已按 architecture.md §4.2、§4.4 在 ALIASES 里加了 `findings`、`sc-results`、`bugfix-upgrade`、`new-violations`、`baseline-violations`、`repaid-violations`（报告不是 T1 的模板，只需把它们补进别名索引，注明来源为评审报告 / 静态分析报告）；`bugfix-analysis.md`、`proposal-bugfix.md` 标题里的占位符改为 `<change-name>`（`new` 只替换它）。
 
 **验收**
 - 每个模板经 `parse()` 后，`ALIASES` 里的每个键都能 `find()` 到。
