@@ -141,7 +141,7 @@ docs/                                      设计、验证手册、本文       
 | `gitutil` | git 调用 | `git/head/current_branch/changed_files/commits/user_name` | T2 |
 | `mdparse` | markdown 结构解析 | `parse/find/find_all/ids/tables/checkboxes`、`ALIASES`、`ID_PATTERNS` | T1 |
 | `retro` | retrospective.md 三张表 | `Waiver`、`waivers()`、`todos()`、`append_waiver/append_tier_change/add_todo` | T6 |
-| `grants` | 放行 / 降档一次性授权 | `WAIVE_PHRASE`、`issue_from_prompt()`、`consume()` | T6 |
+| `grants` | 放行 / 降档一次性授权的存取 | `match_phrase()`、`issue()`、`consume()` | T6 |
 | `router` | Phase 路由 | `next_phase()`、`skip_reason()`、`review_rounds()` | T2 |
 | `locate` | 定位当前 change | `resolve()` | T2 |
 | `taskstate` | 任务完成状态（来自 Task-Id trailer） | `done_tasks()`、`render()`、`open_tasks()` | T2 |
@@ -181,16 +181,17 @@ Finding(level="BLOCK", check="ac-mapped", reason="AC-3 没有映射到任何 SC"
 | `command` | shell 命令字符串 |
 | `prompt` | 用户原文（只在内存里，不写日志） |
 | `cwd` | 事件发生的目录 |
+| `agent` | 子 agent 名（去掉 `reins:` 前缀）；主线程或平台不提供时为空。目前只有 Claude Code 提供（`agent_type`），Codex、OpenCode 的 PreToolUse 不带 |
 
-T6 需要子 agent 身份等字段时，在 `normalize()` 里追加，并确认三个平台 payload 里的真实字段名。
+新增事件字段只能在 `normalize()` 里追加，并先确认三个平台 payload 里的真实字段名。
 
 **hook 输出**：pre-tool 拦截时，claude / codex 在 stdout 输出 `permissionDecision: deny` 的 JSON、退出码 0；opencode 退出码 2、原因写 stderr。prompt-submit 的提示经 `additionalContext` 返回。policy 不关心这些，只返回字符串。
 
 **`.meta.json`**：字段和取值见设计文档 §3.2，`meta.new()` 按它生成。只有 `meta.update()` 能写，且必须在锁内完成。
 
-**retrospective.md**：三张表的列固定（见 `retro.py` 顶部），只能追加，只有 CLI 写。
+**retrospective.md**：三张表的列固定（见 `retro.py` 顶部），只能追加，只有 CLI 写。每次写入同时记录内容哈希（`.retro.sha256`），git pre-commit 据此拒绝手工改动。它是 CLI 自己写的固定格式，`retro` 自带只认这种格式的读取逻辑，是「只有 mdparse 解析 markdown」规则的唯一例外。
 
-**授权**：只有 `policies/waive_grant` 在用户原文完整匹配口令时签发；`waive` 和 `complexity set --downgrade` 必须 `grants.consume()` 成功才执行。
+**授权**：只有 `policies/waive_grant` 在用户原文完整匹配口令、且确认的对象真实存在（当前未放行的 BLOCK，或低于已确认档位的降档）时签发。放行授权绑定该检查项全部 BLOCK 的指纹，内容变了就要重新确认。`waive` 和 `complexity set --downgrade` 必须 `grants.consume()` 成功才执行；`waive` 在真实终端（TTY）里还可以让用户输入 change 名确认，作为没有提示词 hook 的平台的退路。
 
 ---
 
