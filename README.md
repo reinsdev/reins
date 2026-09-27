@@ -64,12 +64,16 @@ Codex 没有自定义斜杠命令，入口是同名 skill。OpenCode 里也可�
 
 - bugfix 的影响范围由总控在 Phase 1 用 `scope set --files N` 落盘，`--cross-service`、`--ddl`、`--public-api` 决定是否需要设计和规格。
 - 提交带 `Task-Id` trailer，RED 另带 `TDD-Phase: RED`。总控用 `tasks-sync --apply` 同步勾选。`new` 安装的 git hook 检查提交证据和留痕完整性。
-- 首次接入由 `init-config --java --dry-run` 预览，再运行 `init-config --java`。它执行静态检查并建立基线，不会替项目安装质量工具或编写 ArchUnit 规则；工具和报告必须真实可用。
+- 首次接入先由总控运行 `quality setup --dry-run` 展示改动，用户同意改 pom 后执行 `quality setup`；用户同意联网时加 `--online` 预热 Maven 依赖。再执行 `init-config --java --dry-run` 和 `init-config --java` 建立真实质量基线。
 - 评审报告按插件 `templates/reports/` 填写。首行是对应 agent 的 `generated-by` 标记，结论表的 BLOCK/WARN/INFO 数量必须与问题清单一致。不能用一句“通过”代替。
 - 用户不做部署验收时，总控在 Phase 8.5 执行 `deploy skip --reason "用户理由"`。Phase 8.9 输入 `确认验收 <change>` 后，总控才能 `uat accept`；需要修改时用 `uat reject --phase N --reason "用户理由"` 回退。
 - 放行口令是 `确认放行 <change> <gate> <check>`。`check` 必须用当前 BLOCK 输出中的完整标识。口令不是普通“继续”，授权绑定拦截内容，内容改变需要重新确认。
 
 以上 CLI 由总控调用，用户在会话中仍使用 `/spec`、`/bugfix`、`/waive`。开发者可运行 `python3 tools/e2e/run.py` 在临时 Maven 项目中复现 CLI 流程，无需启动 AI 平台。联调发现的阻塞（E2E-01 至 E2E-04）已转为任务，见 [任务书](docs/dev/tasks.md) 的 T14、T16、T17；修复前带 `--diagnose` 的运行不能视为完整通过。详细步骤见 [验证手册](docs/verification.md#17-cli-端到端联调)。Windows 验证延后。
+
+质量接入支持 Maven 的 JUnit 4/5：添加 ArchUnit 1.3.0 测试依赖和冻结分层测试；Checkstyle 3.6.0、PMD 3.26.0、SpotBugs 4.9.3.0 使用完整插件坐标写入配置，不额外改 pom。默认离线只写文件，返回 2 表示依赖尚未验证；`--online` 成功返回 0，仍需初始化基线。改 pom 前保存 `pom.xml.reins-bak`，失败恢复本次管理的文件。已有依赖、测试和团队配置保留；多模块只处理有 Java 源码的模块，包名或 JUnit 无法确定时需明确确认。Gradle 自动接入暂不支持，CLI 会给出手工步骤。
+
+有 SQL/MyBatis 资源时，接入命令先列出 JDBC 方言候选，由用户确认后通过 `--sql-dialect` 生成 `.sqlfluff`；已有文件仅展示差异。默认启用 CP01（关键字大写）、CP02–CP04（标识符、函数、字面量写法一致）、AM04（限制 `SELECT *`）、RF02（多表字段限定）及 LT05（120 字符，告警级），关闭 AL01、AL02、LT02。placeholder 模板识别 MyBatis `#{…}` 和提取后的 `?`。无 SQL 时不生成配置；缺少 SQLFluff 时只提示安装，不自动安装。规则可由团队调整，配置语义见 [SQLFluff 规则配置](https://docs.sqlfluff.com/en/stable/configuration/rule_configuration.html)和 [placeholder 文档](https://docs.sqlfluff.com/en/stable/configuration/templating/placeholder.html)。
 
 ### 用平台原生命令安装
 

@@ -237,14 +237,23 @@ class PointsTest {
         self.check("放行按指纹生效", "WAIVED" in output, output)
         self.advance("6")
 
-    def flow_q(self):
+    def flow_q4(self):
+        self.flow_q(junit4=True)
+
+    def flow_q(self, junit4=False):
         """T16: real onboarding, baseline, and new style/architecture debt."""
-        self.setup("Q")
-        self.git("mv", "src/main/java/demo/Points.java", "src/main/java/demo/DomainPoints.java")
-        old = self.root / "src/main/java/demo/DomainPoints.java"
+        self.setup("Q4" if junit4 else "Q")
+        if junit4:
+            pom = (self.root / "pom.xml").read_text(encoding="utf-8")
+            self.write("pom.xml", pom.replace("org.junit.jupiter", "junit").replace("junit-jupiter", "junit").replace("5.12.2", "4.13.2"))
+            test = self.root / "src/test/java/demo/PointsTest.java"
+            content = test.read_text(encoding="utf-8").replace("org.junit.jupiter.api.Test", "org.junit.Test").replace("org.junit.jupiter.api.Assertions", "org.junit.Assert")
+            self.write(test.relative_to(self.root).as_posix(), content.replace("class PointsTest", "public class PointsTest").replace("    void ", "    public void "))
+        (self.root / "src/main/java/demo/domain").mkdir()
+        self.git("mv", "src/main/java/demo/Points.java", "src/main/java/demo/domain/Points.java")
+        old = self.root / "src/main/java/demo/domain/Points.java"
         text = old.read_text(encoding="utf-8").replace("package demo;", "package demo.domain;")
         self.write("src/main/java/demo/domain/Points.java", text)
-        self.git("rm", "src/main/java/demo/DomainPoints.java")
         test = self.root / "src/test/java/demo/PointsTest.java"
         self.write(test.relative_to(self.root).as_posix(), test.read_text(encoding="utf-8").replace("new Points()", "new demo.domain.Points()"))
         self.cli("quality", "setup", "--dry-run")
@@ -394,7 +403,7 @@ class PointsTest {
 
 def main():
     parser = argparse.ArgumentParser(description="在临时目录运行真实 Java/CLI 联调，保留全部证据")
-    parser.add_argument("--flows", nargs="+", choices=["A", "B", "C", "Q"], default=["A", "B", "C"])
+    parser.add_argument("--flows", nargs="+", choices=["A", "B", "C", "Q", "Q4"], default=["A", "B", "C"])
     parser.add_argument("--online", action="store_true", help="显式允许 Maven 下载依赖；默认离线")
     parser.add_argument("--maven-repo", type=Path, help="已有的 Maven 本地仓库")
     parser.add_argument("--diagnose", action="store_true", help="仅临时流程 A：记录阻塞后模拟口令放行以探查后续；最终仍返回失败")

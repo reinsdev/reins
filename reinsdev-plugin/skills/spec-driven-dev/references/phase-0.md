@@ -21,3 +21,9 @@
 ```
 
 结束：按总控退出码表处理，重读状态后进入 Phase 1。
+
+## 首次接入质量工具
+
+首次接入先运行 `<spec-driven-dev skill 目录>/scripts/spec-driven quality setup --dry-run` 展示 pom、架构测试和配置差异。用户同意改 pom 后执行 `quality setup`；默认离线写入返回 2，表示依赖缓存尚未验证。用户也同意联网时执行 `quality setup --online` 预热，再执行 `init-config --java` 建基线。已有明确授权不重复询问。
+
+包名和 JUnit 无法确定时，用用户确认的 `--base-package`、`--junit 4|5` 重试。有 SQL 时确认 JDBC 方言候选，再用 `--sql-dialect` 生成团队 `.sqlfluff`；已有配置只列差异。SQLFluff 未安装时解释安装方法，不擅自安装。Gradle 自动接入暂不支持，按 CLI 提示完成手工接入。

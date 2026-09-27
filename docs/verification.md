@@ -122,6 +122,7 @@ python3 tools/e2e/run.py --diagnose           # 仅临时 A 流程诊断放行�
 | A：S feature | new、advance、TDD 提交、tasks-sync、init-config、6/6.5/6.7、code review、deploy skip、uat accept/reject、archive | 基线存在阻塞；诊断模式放行后探查后续，不能标为全链通过 |
 | B：M feature | proposal/design/spec/tasks/spec-review、gate 5 拦截、口令授权、waive、推进 Phase 6 | 未授权 waive 应返回 1；gate BLOCK 为 3；授权后 WAIVED 为 0 |
 | C：bugfix | new --mode bugfix、scope show/set、Phase 2/3 路由 | 2 个文件、不跨服务/DDL/API 时跳过 2/3；3 个文件且改 API 时两阶段必走；离开 Phase 1 后 scope set 返回 1 |
+| Q / Q4：质量接入 | Maven + JUnit 5 / 4：quality setup、init-config、gate 6.7、新违规 | 初始化及首轮 gate 返回 0；新增 Checkstyle 或 ArchUnit 违规后返回 3；恢复代码后重新通过 |
 
 联调发现的问题及归属见 [任务书](dev/tasks.md)：E2E-01 → T17，E2E-02 → T14，E2E-03 → T15、T16，E2E-04 → 协调者。
 
@@ -178,7 +179,23 @@ Claude prompt-submit 返回 0，签发结果在 JSON 的 `hookSpecificOutput.add
 
 评审报告必须使用 `templates/reports/spec-review.md`、`qa-report.md`、`code-review.md`。首个非空行分别是 `<!-- generated-by: spec-evaluator-subagent -->`、`qa-evaluator-subagent`、`code-reviewer-subagent` 标记。`## 结论` 的表头为 `BLOCK | WARN | INFO`，唯一数据行是三个非负整数；`## 问题清单` 表头为 `级别 | 位置 | 问题 | 建议`，数量与结论一致，零问题时只留表头。QA 另有 `SC | 结果 | 证据` 表，逐个 SC 标 PASS/FAIL；bugfix spec-review 另有 `## bugfix 升级判定`。code-review 的 WARN 原文需经 `retro add --source "code-review WARN" "问题原文"` 记录。
 
-`init-config --java --dry-run` 不执行质量命令、不写文件。正式初始化执行 ArchUnit、Checkstyle、SpotBugs、PMD 等检查，成功后写 `.openspec/.config.json` 和 `quality-baseline.json`。默认 Maven 质量命令带 `-o`，不会在线补依赖。配置命令、规则、依赖和报告路径必须可用；一个只有 Surefire/JaCoCo 的 POM 并不足以完成初始化。失败时不把失败结果保存为有效基线。gate 6.7 即使拦截也会生成 `static-analysis-report.md`；报告存在不能证明静态检查通过。
+首次接入应在业务 TDD 提交之前完成，避免工具接入文件混入业务任务范围。总控先展示以下预览，用户同意改 pom、同意联网后才执行相应写入与下载：
+
+```sh
+"$CLI" quality setup --dry-run
+"$CLI" quality setup                          # 离线写配置，返回 2，提示尚未验证缓存
+"$CLI" quality setup --online                 # 预热依赖，成功返回 0
+"$CLI" quality show
+"$CLI" init-config --java --dry-run
+"$CLI" init-config --java
+python3 tools/e2e/run.py --flows Q Q4 --online # 独立临时项目验证接入与新增违规
+```
+
+无法确定分层基础包或 JUnit 时，用用户确认的 `--base-package com.example --junit 5`；不自动猜测。多模块只选择有 Java 业务源码的模块，条件模块和无法解析的模块路径直接报错。pom 备份为 `pom.xml.reins-bak`；已有不同备份会阻止写入。预热失败恢复接入文件，Maven 日志保留在 `.openspec/quality-setup-logs/`。`.mvn/maven.config` 强制离线时需要用户自行移除离线选项后再预热。已有团队命令保持不变，未知命令不会被自动执行。
+
+有 SQL/MyBatis 资源时，先确认 JDBC 方言候选，再用 `quality setup --sql-dialect postgres --dry-run` 查看完整 `.sqlfluff`；正式执行生成配置，已有文件只列差异。启用 CP01–CP04、AM04、RF02、LT05，关闭 AL01、AL02、LT02，120 字符的 LT05 只告警。placeholder 同时支持 `#{id,jdbcType=BIGINT}` 与 `?`。可用 `python3 tools/e2e/check_sqlfluff.py --sqlfluff /path/to/sqlfluff` 实测规则、隐式别名、占位符和告警退出码；安装 SQLFluff 需单独得到用户同意。告警和数量变化如何进入 gate 由 T20 负责。
+
+`init-config --java --dry-run` 不执行质量命令、不写文件。正式初始化执行真实质量检查，成功后写 `.openspec/.config.json` 和 `quality-baseline.json`。接入保存的 Maven 命令带 `-o`；`quality setup --online` 只预热，不建立基线。Checkstyle 使用 Google 规则；PMD 使用锁定插件的内置规则；SpotBugs 输出 XML。三者运行报告目标，违规交给 gate 判断；工具执行错误仍失败。初始化失败不保存有效基线。gate 6.7 即使拦截也会生成 `static-analysis-report.md`；报告存在不能证明静态检查通过。Gradle 自动接入暂不支持，Windows 验证延后。
 
 ---
 

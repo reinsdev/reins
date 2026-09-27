@@ -17,6 +17,7 @@ def register(sub):
     p.add_argument("--online", action="store_true", help="允许联网下载插件和依赖并预热本地仓库")
     p.add_argument("--base-package", help="用户明确确认的基础包（适用于选中的所有 Java 模块）")
     p.add_argument("--junit", choices=["4", "5"], help="无法自动识别时，用户明确确认的 JUnit 版本")
+    p.add_argument("--sql-dialect", help="用户确认的 SQLFluff 方言，例如 postgres、mysql、oracle、tsql")
 
 
 def run(a) -> int:
@@ -25,7 +26,7 @@ def run(a) -> int:
         if a.action == "show":
             print(json.dumps(java_setup.load_config(root).get("quality", {}), ensure_ascii=False, indent=2))
             return 0
-        planned = java_setup.plan(root, a.base_package, a.junit)
+        planned = java_setup.plan(root, a.base_package, a.junit, a.sql_dialect)
         print(planned.render())
         if a.dry_run:
             print("只读预览完成，未写文件、未联网。")
