@@ -1,0 +1,1 @@
+<BugCollection version="4.8.0"><BugInstance type="NP_NULL_ON_SOME_PATH" priority="2"><LongMessage>Possible null pointer dereference</LongMessage><Class classname="demo.Service"><SourceLine classname="demo.Service" sourcefile="Service.java" sourcepath="demo/Service.java" start="9" end="9"/></Class></BugInstance></BugCollection>

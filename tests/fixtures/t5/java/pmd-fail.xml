@@ -1,0 +1,1 @@
+<pmd xmlns="http://pmd.sourceforge.net/report/2.0.0" version="7.0.0"><file name="src/main/java/demo/Service.java"><violation beginline="7" endline="7" rule="UnusedPrivateField" ruleset="Best Practices" priority="3">Avoid unused private fields.</violation></file></pmd>
