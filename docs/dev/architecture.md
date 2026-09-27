@@ -293,6 +293,8 @@ Finding(level="BLOCK", check="ac-mapped", reason="AC-3 没有映射到任何 SC"
 
 - ALIASES 键：`conclusion`、`new-violations`（新增违规）、`baseline-violations`（存量违规）、`repaid-violations`（已偿还）。
 - 「检查」取值：`archunit`、`checkstyle`、`spotbugs`、`pmd`、`sqlfluff`，与 `.config.json` 的 `quality.<检查>` 键一致。
+- **告警级违规**：工具把某条规则标为告警（如 SQLFluff 的 `warnings` 配置）时，新增的这类违规仍列在「新增违规」表里，但「说明」列以 `[WARN] ` 开头；gate 6.7 对它们给 WARN、不拦截，也不计入结论表的「新增」数。存量和已偿还的判定与其他违规相同。
+- **新增的判定按数量**：同一指纹（检查 + 文件 + 规则 + 规范化消息）的违规，当前数量多于基线数量时，多出的部分算新增；少于基线时，少掉的部分算已偿还。
 
 ### 4.5 用户决策命令
 

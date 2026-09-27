@@ -38,6 +38,7 @@
 | T17 | S 档任务关联 AC（联调问题 E2E-01） | T1、T3、T8 | 📋 待领取（建议 Codex） |
 | T18 | 工件骨架生成 `scaffold` + 需求链追溯 `trace` | — | 📋 待领取 |
 | T19 | Phase 6 多实现者并行 `parallel` | T14 | 📋 待领取（优先级低，T14 合入后开工） |
+| T20 | SQL 检查完善（动态 SQL、占位符、`${}`、告警级规则、按数量比较违规） | T15 | 📋 待领取（建议 John，T15 合入后开工） |
 
 T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告的问题编号（E2E-01 至 E2E-04）见各任务说明。
 
@@ -403,7 +404,16 @@ T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告�
    - 多次执行结果相同（幂等）；
    - 多模块 Maven 项目：列出各模块，只处理含 `src/main/java` 的模块；判断不了时停下来说明，不要猜。
 5. **Gradle**：第二优先级。能做就同样处理（Gradle 自带 checkstyle、pmd 插件，SpotBugs 需 `com.github.spotbugs` 插件）；来不及时，`quality setup` 对 Gradle 项目明确回报「暂不支持」和手工步骤，不能静默跳过。
-6. **SQLFluff**：检测 `sqlfluff` 是否可用；不可用时给出安装方式和 `.sqlfluff` 配置示例（方言按项目数据库）。项目里没有 SQL 文件时说明可以不装。
+6. **SQLFluff**（追加：生成团队默认配置，替代原来「给出配置示例」）
+   - 检测 `sqlfluff` 是否可用；不可用时给出安装方式。项目里没有 SQL 文件时说明可以不装、不生成配置。
+   - 在项目根生成 `.sqlfluff`（已存在时不覆盖，只列出差异）：
+     - 方言：按 pom / Gradle 里的 JDBC 驱动推断（mysql、postgres、oracle、tsql 等），推断结果请用户确认；推断不出时停下询问。
+     - 参数占位：使用 SQLFluff 的 `placeholder` 模板，把 MyBatis 的 `#{…}` 当作问号占位符（与 T20 的提取方式对应）。
+     - 启用的规则：关键字大写（CP01），标识符、函数名、字面量写法一致（CP02–CP04），禁止 `SELECT *`（AM04），多表连接时字段带表名或别名前缀（RF02）。
+     - **不要求**显式写 `AS`：关闭 AL01、AL02。
+     - 行长度：LT05 上限 120 字符，**列入 `warnings`（告警级，不拦截）**。
+     - 从 mapper 提取的 SQL 的缩进来自 XML 排版，关闭缩进类规则（LT02）。
+   - 生成的规则集写进交付说明和 README，便于团队按需调整。
 7. **串起来验证**：用 T13 的联调脚本（`tools/e2e/run.py`）在真实的最小 Maven 项目里跑：`quality setup --online` → `init-config --java` 成功生成基线 → gate 6.7 通过；再故意引入一处新违规，gate 6.7 必须拦截。流程 A 在 E2E-01、E2E-02 修好之前仍需 `--diagnose`，这不影响本任务的验收。
 8. `phase-0.md`、`cli-boundaries.md` 里补上「首次接入：先 `quality setup`（需用户同意改 pom、同意联网），再 `init-config --java`」；README 和验证手册同步。
 
@@ -482,6 +492,37 @@ T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告�
 **验收**
 - 在临时仓库里：3 个任务（两个无依赖、一个依赖前者）分成两波；范围重叠的任务不会进同一波；有冲突时中止并保留现场；正常时合回后 gate 6.5 通过、worktree 被清理。
 - `parallel.enabled=false` 时 `run` / `merge` 拒绝执行。
+
+---
+
+## T20 SQL 检查完善
+
+**目标**：SQLFluff 已接入 gate 6.7，但对照代码发现以下问题，导致真实 MyBatis 项目基本过不了 gate 6.7，或者新增违规被漏掉。**T15 合入后开工**（同样改 `java.py`）；团队默认的 `.sqlfluff` 由 T16 生成，本任务按那份配置实现。
+
+**拥有的文件**
+- `java.py`、`gates/g6_7.py`
+- `tests/test_sql_quality.py`（新建；不改已有测试文件）
+
+**要做的**
+1. **动态 SQL 标签**：`<if>`、`<where>`、`<set>`、`<trim>`、`<choose>`/`<when>`/`<otherwise>`、`<foreach>`、`<bind>` 目前会让整个检查报错。改为展开成可检查的静态 SQL：
+   - `<if>`、`<when>`、`<otherwise>` 的内容都保留（所有分支都展开，`<choose>` 的每个分支各生成一条变体，同一条语句的多个变体报出的相同违规只算一次）；
+   - `<where>`、`<set>`、`<trim>` 按 MyBatis 的规则处理前缀、后缀和多余的 AND / OR / 逗号；
+   - `<foreach>` 按展开一项处理，保留 open / close / separator；
+   - 行号仍映射回原 XML。
+2. **参数占位**：`#{…}` 不再替换成 `NULL`（会误触发「与 NULL 比较要用 IS」），改为问号占位符，配合 `.sqlfluff` 的 `placeholder` 模板。
+3. **`${…}` 拼接**：不再让整个检查报错，改为报告一条违规（规则名如 `mybatis-dollar-substitution`，提示有 SQL 注入风险），参与新增 / 存量判定；展开时用一个中性标识符占位，让后面的 SQL 仍能被检查。
+4. **一次调用**：所有语句写到一个临时目录，只调用一次 SQLFluff，再按文件把结果映射回原文件和行号；超时按整体计算。
+5. **告警级规则**：读取 SQLFluff 输出里的告警标记（`.sqlfluff` 的 `warnings` 配置，如 LT05 行长度），按 architecture.md §4.4 处理：列在「新增违规」表里、说明以 `[WARN] ` 开头，gate 6.7 给 WARN 不拦截。
+6. **按数量比较违规（所有检查通用）**：现在用指纹做字典去重，同一文件里同一规则、同样提示的违规只算一个，已有 1 处存量时新增 10 处也不会被拦截。改为按 architecture.md §4.4 的「按数量判定」：同一指纹当前数量多于基线时，多出的部分算新增。基线文件格式保持 `version: 1` 兼容（同一指纹多条记录即表示数量）。
+7. 扫描范围补充：`src/main/resources` 以外、`.config.json` 里 `quality.sqlfluff.paths` 指定的目录（新增配置项，默认空，追加到 `config.DEFAULTS`）。写在 Java 注解里的 SQL（`@Select` 等）本任务不做，交付说明里标注。
+
+**验收**
+- 使用了全部动态标签的 mapper 能被检查，违规行号正确；`${}` 作为违规出现且其余 SQL 照常检查。
+- `WHERE id = #{id}` 不再报「与 NULL 比较」。
+- 同一文件在基线已有 1 处某违规时，再新增 1 处同样的违规会被拦截；修掉 1 处算已偿还。
+- 行长度超限只出 WARN，不拦截；其他规则的新增违规拦截。
+- 100 个 mapper 语句只启动一次 SQLFluff 进程（用计数的假命令验证）。
+- 不依赖真实 SQLFluff 的单元测试用假命令输出固定 JSON；另附一个装了 SQLFluff 时才运行的集成测试（未安装时跳过并说明）。
 
 ---
 
