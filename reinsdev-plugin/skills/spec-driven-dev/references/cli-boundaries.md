@@ -15,8 +15,15 @@
 | 决策 | `design show --change <change>`；`design set "<choice>" --change <change>` |
 | 任务状态 | `tasks-sync --change <change>` 预览；加 `--apply` 才写 |
 | 待优化项 | `retro add --source "code-review WARN" "<问题原文>" --change <change>`；内容与 WARN 行的“问题”完全相等 |
+| 用户验收通过 | `uat accept --change <change>`；先请用户本人原样输入“确认验收 <change 名>” |
+| 用户要求修改 | `uat reject --phase N --reason "<用户原话>" --change <change>`；已含回退，不再单独调用 retry |
+| bugfix 范围 | `scope set --files N [--cross-service] [--ddl] [--public-api] --change <change>`；Phase 1 用户确认分析后执行 |
+| 范围与跳过判定 | `scope show --change <change>`；将 Phase 2、3 是否跳过及原因告诉用户 |
+| 跳过部署验收 | `deploy skip --reason "<用户原话>" --change <change>`；用户选 n / skip 后执行，成功即进入 Phase 8.9 |
 | 回退 | `retry <phase> --reason "<reason>" --change <change>` |
 | 归档 | `archive --dry-run --change <change>`；去掉 `--dry-run` 才执行 |
+
+用户决策命令的 `--reason` 只用用户原话。`uat accept` 报“没有有效授权”时，原文呈报后停止，不替用户输入口令或创建授权。验收授权绑定 spec.md 与 qa-report.md，内容变化后须重新确认。`deploy skip` 已推进状态时先读 status，不重复 advance。范围参数来自用户确认的 bugfix-analysis，方括号表示可选参数，不原样传入。
 
 子命令已注册不表示实现已经可用。若返回“该能力不可用”、错误码 1、无法解析的输出或缺少必要状态，停止并呈报，不另写脚本代替。不要使用旧文档中的 `new-change.sh`、`scaffold-artifact.sh`、`archive-change.sh`、`tasks-sync --write`、`gate --soft` 或未注册的 parallel / trace 命令。
 
@@ -37,8 +44,6 @@ CLI 负责写入档位和 retrospective 的档位变更记录。确认命令成�
 
 ## 当前需协调者补齐的入口
 
-- 用户验收：当前命令契约没有写入 uatAccepted / uatAcceptedAt 的入口。用户说通过后仍不能归档，不能发明 accept 或 uat 命令。
-- 部署选择与跳过留痕：当前没有专用入口记录用户选择和 DEPLOY-VERIFIED: NO。retro add 仅写待优化清单，不能冒充部署选择记录。
 - S 档 feature：Phase 3 被跳过且没有有效 spec 时，Phase 4 缺少 SC 输入。现有任务契约只接受 SC 或 bugfix 修改点；停止并请 T0/T1 确定路由或关联契约，不能自行造 SC 或把 AC 当作 SC。
 
 阶段推进已有 advance 入口；gate 自身不负责推进。advance 同时验证 Phase 6 的 6 / 6.5 / 6.7，并按档位和 mode 记录条件跳过。执行失败或状态异常时停止，不能直接调用 meta.update() 或编辑 JSON。
@@ -47,7 +52,7 @@ CLI 负责写入档位和 retrospective 的档位变更记录。确认命令成�
 
 ## 回退与恢复
 
-需要修改上游时，向用户说明原因与受影响范围，再执行：
+Phase 8.9 用户要求修改时按上面的 `uat reject` 流程执行，不再单独调用 retry。其它需要修改上游的情况，向用户说明原因与受影响范围，再执行：
 
 ```text
 <spec-driven-dev skill 目录>/scripts/spec-driven retry <phase> --reason "<reason>" --change <change>

@@ -24,7 +24,7 @@ CLI 随 skill 打包。macOS、Linux、Git Bash 使用上面的启动器；Power
 ## 硬规则
 
 1. `.meta.json`、`retrospective.md`、授权文件只由 CLI 写入。模型不得用编辑器、shell、Python 或直接调用内部模块代写。
-2. 上游工件冻结。发现上游错误，先通过 `retry` 回到对应 Phase，再修改并重过受影响的下游 gate。
+2. 上游工件冻结。发现上游错误，先通过 `retry` 回到对应 Phase，再修改并重过受影响的下游 gate。Phase 8.9 用户要求修改时由 `uat reject` 完成记录与回退，不再单独调用 retry。
 3. 固定业务值、字段映射、格式来自用户。来源不明就保留问题，不得以推断或默认值填成已确认。
 4. 评审报告只能由对应独立 agent 写。按 [调度协议](references/subagent-protocol.md) 验证首行标记；失败重试一次，仍失败就停下交人工。
 5. 完成实现需要测试实际运行并通过，以及带 `Task-Id` trailer 的提交。任务勾选由 CLI 同步。
@@ -65,6 +65,6 @@ gate 负责诊断，advance 重新过门并持久化阶段推进。只在 Phase 
 <spec-driven-dev skill 目录>/scripts/spec-driven advance --change <change>
 ```
 
-用户明确接受当前告警后才加 --ack-warn。new 或 archive 已推进状态时不重复 advance；先读 status。advance 失败或状态仍未推进时，按 [CLI 边界](references/cli-boundaries.md) 停止处理。条件跳过由 CLI 写入非空原因；S/M/L 和 bugfix 条件由路由器决定。
+用户明确接受当前告警后才加 --ack-warn。new、archive 或 deploy skip 已推进状态时不重复 advance；先读 status。advance 失败或状态仍未推进时，按 [CLI 边界](references/cli-boundaries.md) 停止处理。条件跳过由 CLI 写入非空原因；S/M/L 和 bugfix 条件由路由器决定。
 
 每完成 1–2 个 Phase 或上下文紧张时，告知当前 change、Phase、工件路径和未决事项。新会话经 resume 恢复；是否提交 checkpoint 遵守用户已有授权。
