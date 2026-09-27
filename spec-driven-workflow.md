@@ -93,7 +93,7 @@ THEN 返回 RpcResult.fail(code=40010)
 AND 数据库不变
 ```
 
-**ID 规约**：`REQ-<capability>-<NNN>`、`SC-<capability>-<NNN>`；边界/异常场景常用 `E` 后缀(如 `SC-policy-approval-E2`)。整条链可追溯的最小单位就是 SC——Phase 4 的任务关联 SC，Phase 7 的 QA 按 SC 逐条 PASS/FAIL，`spec-driven trace <id>` 能从任一 AC/SC/T ID 反查 spec→tasks→test。
+**ID 规约**：`REQ-<capability>-<NNN>`、`SC-<capability>-<NNN>`；边界/异常场景常用 `E` 后缀(如 `SC-policy-approval-E2`)。整条链可追溯的最小单位就是 SC——Phase 4 的任务关联 SC(Phase 3 被跳过的 feature 关联 AC，bugfix 关联修改点)，Phase 7 的 QA 按 SC 逐条 PASS/FAIL。
 
 ### 2.4 复杂度分级——S/M/L 三通道
 
@@ -131,8 +131,8 @@ AND 数据库不变
 
 **mode 决定瘦身规则：**
 
-- `feature` 模式：Phase 2、3 必走完整流程
-- `bugfix` 模式：Phase 2、3 按改动范围可瘦身或跳过
+- `feature` 模式：Phase 2、3 按档位决定，S 档跳过，M / L 档必走完整流程
+- `bugfix` 模式：Phase 2、3 按改动范围可瘦身或跳过（`spec-driven scope set` 记录评估，见 §5.2）
 
 bugfix 的缺陷信息由用户在对话中补全，不调用任何缺陷平台；`.meta.json` 的 `source` 字段为接入缺陷平台留位，默认 `null`。
 
@@ -145,20 +145,20 @@ bugfix 的缺陷信息由用户在对话中补全，不调用任何缺陷平台�
 | 输入 | 用户的需求描述或问题描述 |
 | 角色 | spec-driven-dev skill 自身 |
 | 产出 | `.openspec/changes/<change>/proposal.md` + `.meta.json` |
-| 工具 | `scripts/new-change.sh`(下游 design/spec/tasks 进入对应 phase 时由 `scripts/scaffold-artifact.sh` 生成) |
+| 工具 | `spec-driven new`(下游 design/spec/tasks 由对应 skill 按 `templates/` 下的模板写出) |
 
 **操作步骤(feature 模式)：**
 
 1. 与用户对齐变更名(kebab-case，如 `batch-approve-policy`)
 2. 检查项目根是否在 git 仓库内，如果不是，先提示 `git init`
-3. 检测 `.openspec/` 目录是否存在，不存在则创建；项目首次接入时，经用户确认后运行 `spec-driven init-config --java` 生成配置与静态质量基线
-4. 调用 `new-change.sh <change-name> --mode feature`(默认不带 `--complexity`，落临时档位 provisional M / `tierConfirmed=false`，正式选档在 Phase 1 末尾；仅当用户已明确档位时才带 `--complexity`)
+3. `.openspec/` 不存在时由 `spec-driven new` 创建；项目首次接入时，经用户确认后先运行 `spec-driven quality setup`(接入 ArchUnit / Checkstyle / PMD / SpotBugs，会修改 pom 并可能需要联网)，再运行 `spec-driven init-config --java` 生成配置与静态质量基线
+4. 调用 `spec-driven new <change-name> --mode feature`：落临时档位 provisional M / `tierConfirmed=false`，正式选档在 Phase 1 末尾；同时创建并切换到 `feat/<change>` 分支、安装 git hook，最后跑 gate-0
 5. `.meta.json` 写入 `"mode": "feature"` + `"complexity": "M"` + `"tierConfirmed": false`
 
 **操作步骤(bugfix 模式)：**
 
 1. 从问题描述生成 change name = `fix-<YYYYMMDD>-<slug>`(slug 取描述首 3-5 个有效词，kebab-case)，与用户确认
-2. 同样调用 `new-change.sh <change-name> --mode bugfix`(bugfix 的档位由 bugfix-analysis 复杂度判定接管，`tierConfirmed=true`)
+2. 调用 `spec-driven new <change-name> --mode bugfix`(也可只给 `--slug`，由 CLI 生成名字；bugfix 的档位由 bugfix-analysis 复杂度判定接管，`tierConfirmed=true`)
 3. `.meta.json` 写入 `"mode": "bugfix"` + `"source": null` + `"defect_code": null`
 
 **验证门 0**
@@ -221,6 +221,8 @@ bugfix skill 先通过对话补全 5 项信息：复现步骤 / 期望 vs 实际
 5. 草稿标志：文件顶部 `<!-- AUTO-DRAFTED by bugfix skill; 用户必须 review 并补全后才能通过验证门 1 -->`
 
 **AC 保护**：AC 写的是期望的正常行为，不是 bug 现象本身，防止把 bug 固化为验收标准。
+
+**记录改动范围**：用户确认 bugfix-analysis.md 后，仍在 Phase 1，由总控执行 `spec-driven scope set --files N [--cross-service] [--ddl] [--public-api]`，数值来自分析里已确认的影响范围；再用 `spec-driven scope show` 告诉用户 Phase 2、3 是否跳过及原因。离开 Phase 1 后要改，须先回退到 Phase 1。
 
 ### 5.3 验证门 1(进入 Phase 2 的前提)
 
@@ -363,7 +365,7 @@ bugfix skill 先通过对话补全 5 项信息：复现步骤 / 期望 vs 实际
 
 - [ ] 每个任务粒度 ≤ 2 小时(粒度过大要再拆)
 - [ ] 任务有清晰的依赖顺序(Foundation → Domain → App → Adapter → Test)
-- [ ] 每个任务都关联到至少一个 spec scenario，或在 bugfix 跳过 Phase 3 时关联到 bugfix-analysis.md 中的"修改点"
+- [ ] 每个任务都关联到至少一个 spec scenario；Phase 3 被跳过时，feature 关联 proposal.md 的 AC(每条 AC 至少被一个任务覆盖)，bugfix 关联 bugfix-analysis.md 中的"修改点"
 - [ ] **bugfix 模式额外**：tasks.md 必须有一条 `T-regression: 为 <场景描述> 编写自动化回归测试`，缺失即 BLOCK
 
 ---
@@ -427,6 +429,8 @@ bugfix 模式下，spec-evaluator 把 `bugfix-analysis.md` 视为 `design.md` �
 
 ### 10.3 可选：多 Agent 并行通道
 
+> **规划中，当前 CLI 尚未提供**：下面描述的 `spec-driven parallel plan / run` 还没有实现，Phase 6 目前只能单线程逐个做任务。
+
 默认 Phase 6 仍是单线程逐个做任务(上面的"重活下沉"只下沉给一个 `implementation-generator`)。若 `.openspec/.config.json` 的 `parallel.enabled=true`(默认关闭，仅建议 L 档 / 任务数较多的大型 change)，可切换为多 worker 并行：
 
 1. 主 skill(此时充当协调者)运行 `spec-driven parallel plan` 只读预演：读 `tasks.md` 的 `depends_on`/`scope` 元数据构建 DAG，按依赖分层成"波次"，波内 `scope` 不重叠的任务同批，给出诚实的收益预估(不创建任何 worktree/分支)。
@@ -452,11 +456,11 @@ bugfix 模式下，spec-evaluator 把 `bugfix-analysis.md` 视为 `design.md` �
 
 ### 10.5 完成记录：勿手动勾选
 
-实现者只产出带 `Task-Id` trailer 的 GREEN/REFACTOR commit；`tasks.md` 的勾选由 `spec-driven tasks-sync [--write]` 据 commit 证据单点渲染(完成的真相是"非 RED commit 带 `Task-Id` + 测试跑绿"，不是手动打的勾)。本次 change 不做的任务用 `- [~]` 显式延期，不要留裸 `- [ ]`。
+实现者只产出带 `Task-Id` trailer 的 GREEN/REFACTOR commit；`tasks.md` 的勾选由 `spec-driven tasks-sync [--apply]` 据 commit 证据单点渲染(不带 `--apply` 只预览)(完成的真相是"非 RED commit 带 `Task-Id` + 测试跑绿"，不是手动打的勾)。本次 change 不做的任务用 `- [~]` 显式延期，不要留裸 `- [ ]`。
 
 ### 10.6 验证门 6.5 — 任务完成门(Phase 6→7 之间)
 
-进入 Phase 7 前，gate-6.5(由 gate-router 在"进入 Phase 7"时随 gate-6 一起触发)会：
+进入 Phase 7 前，gate-6.5(由 `spec-driven advance` 在离开 Phase 6 时随 gate-6 一起运行)会：
 
 - [ ] 先跑 `tasks-sync` 据 commit `Task-Id` trailer 自动补勾(避免"活干完了忘打勾"被误挡)
 - [ ] 再校验 tasks.md **无裸** `- [ ]`：仍有未完成任务 → M/L/bugfix 档 **BLOCK**、S 档 WARN(`tasks.completion_gate=off` 可关闭)
@@ -466,9 +470,9 @@ bugfix 模式下，spec-evaluator 把 `bugfix-analysis.md` 视为 `design.md` �
 
 ### 10.7 验证门 6.7 — 静态质量门(Phase 6→7 之间)
 
-进入 Phase 7 前，gate-6.7(由 gate-router 在"进入 Phase 7"时随 gate-6 / gate-6.5 一起触发)按 `.openspec/.config.json` 的 `quality` 块跑 ArchUnit / Checkstyle / SpotBugs / PMD / SQLFluff。定位属"提交代码前"门禁，在 QA / 人工 review 之前 fail-fast。原则是**新代码必须合规，历史债务不强制本次偿还**。
+进入 Phase 7 前，gate-6.7(由 `spec-driven advance` 在离开 Phase 6 时随 gate-6 / gate-6.5 一起运行)按 `.openspec/.config.json` 的 `quality` 块跑 ArchUnit / Checkstyle / SpotBugs / PMD / SQLFluff。定位属"提交代码前"门禁，在 QA / 人工 review 之前 fail-fast。原则是**新代码必须合规，历史债务不强制本次偿还**。
 
-- [ ] **命令驱动**：每个检查配置 `command`(如 `mvn -q checkstyle:check`、ArchUnit 测试类、`sqlfluff lint`)和 `report_path`；Checkstyle / PMD / SpotBugs 的 XML 报告和 SQLFluff 的 JSON 输出解析出逐条违规。MyBatis mapper XML 经 `sqlfluff-extract.sh` 提取后 lint
+- [ ] **命令驱动**：每个检查配置 `command`(`spec-driven quality setup` 写入带完整坐标、锁定版本的插件命令；ArchUnit 为类名含 `Arch` 的测试类；`sqlfluff lint`)和 `report_path`；Checkstyle / PMD / SpotBugs 的 XML 报告和 SQLFluff 的 JSON 输出解析出逐条违规。MyBatis mapper XML 里的 SQL 由 CLI 提取后交给 SQLFluff
 - [ ] **基线**：项目首次接入时由 `spec-driven init-config --java` 生成配置，并把现有违规记为基线 `.openspec/quality-baseline.json`(提交进仓库)。指纹为"文件 + 规则 + 规范化消息"，不含行号；ArchUnit 用 `FreezingArchRule` 冻结存量
 - [ ] **判定**：本次 change 引入、基线里没有的违规 → **BLOCK**；基线里已有的 → 不拦截，列为"存量"；本次修掉的存量 → 列为"已偿还"，归档时从基线移除，基线只减不增
 - [ ] **不按档位降级**：所有档位一致，也不能在配置里关闭；确实无法修复的新增违规，由用户本人确认放行，经 `spec-driven waive 6.7 <检查名>` 留痕
@@ -538,7 +542,7 @@ code review 通过后，主 skill 必须显式问用户：
 | 用户回应 | 行为 |
 | --- | --- |
 | y | 调用 `local-deploy` skill 在本机启动应用，产出 `deploy-report.md`，交用户人工验收 |
-| n 或 skip | 直接进 Phase 8.9，在 retrospective.md 记录 `DEPLOY-VERIFIED: NO` |
+| n 或 skip | 请用户给出理由，由总控执行 `spec-driven deploy skip --reason "<用户原话>"`：Phase 8.5 标为跳过、理由记入 retrospective.md「部署验收记录」，直接进入 Phase 8.9 |
 
 | 项 | 值 |
 | --- | --- |
@@ -560,7 +564,7 @@ local-deploy 只在本机启动应用，不操作任何远程环境。
 
 - [ ] (用户选 y)deploy-report.md 存在且结论 = `passed`
 - [ ] (用户选 y，结论 = `failed`)→ **不通过**，回 Phase 6 修复，**禁止跳过**
-- [ ] (用户选 n/skip)retrospective.md 已记录 `DEPLOY-VERIFIED: NO`
+- [ ] (用户选 n/skip)已由 `deploy skip` 标为跳过，gate 8.5 直接放行
 
 ### 13.2 部署验收 / 归档后发现 bug 的处理路径
 
@@ -593,20 +597,20 @@ local-deploy 只在本机启动应用，不操作任何远程环境。
 | --- | --- |
 | 输入 | proposal §5.1 字段映射确认表 + 关键行为(SC)摘要 + qa-report 结论 |
 | 角色 | spec-driven-dev skill(向用户呈报)+ 用户(验收) |
-| 产出 | `.meta.json` 写 `uatAccepted: true` + `uatAcceptedAt: <ISO 时间>` |
+| 产出 | 经 `spec-driven uat accept` 写入 `uatAccepted: true` + `uatAcceptedAt`，并记入 retrospective.md「用户验收记录」 |
 
 **操作：**
 
 1. 主 skill 把"字段映射确认表(源→目标→取值规则)+ 本次关键行为 + qa-report 结论"整理成一屏摘要交用户。
 2. 显式问："以上字段取值/行为是否符合预期？验收通过请确认(y)，需要改请指出。"
-3. 用户确认 → 写 `.meta.json.uatAccepted=true`；用户指出问题 → 回对应 Phase 修正(不许归档)。
+3. 用户确认通过 → 请用户本人原样输入 `确认验收 <change 名>`，平台 hook 据此签发一次性授权，总控再执行 `spec-driven uat accept`。授权绑定当时 spec.md 与 qa-report.md 的内容，之后二者变化须重新确认；模型不能代替用户输入口令，也不能直接写 `.meta.json`。
+4. 用户指出问题 → 总控执行 `spec-driven uat reject --phase <N> --reason "<用户原话>"`：记入「用户验收记录」并回退到该 Phase 修正(不许归档)。
 
 ### 14.1 验证门 8.9
 
-- [ ] `.meta.json.uatAccepted == true`(`archive-change.sh` 强制校验，未通过时 **拒绝归档**)
-- [ ] qa-report.md 无主线自评/降级痕迹(由独立 qa-evaluator 产出)
+- [ ] `.meta.json.uatAccepted == true`(`spec-driven archive` 先跑 gate 8.9，未通过时 **拒绝归档**)
 
-例外：用户主动选择跳过验收 → 由用户本人确认放行，经 `spec-driven waive 8.9 uat` 记入 retrospective.md「人工确认记录」后才能归档。
+例外：用户主动选择跳过验收 → 由用户本人确认放行，经 `spec-driven waive 8.9 g8_9-uat-accepted` 记入 retrospective.md「人工确认记录」后才能归档。
 
 ---
 
@@ -617,9 +621,9 @@ local-deploy 只在本机启动应用，不操作任何远程环境。
 | 输入 | `.openspec/changes/<change>/` 全套工件 |
 | 角色 | spec-driven-dev skill 自身 |
 | 产出 | `.openspec/changes/archive/<date>-<change>/` + 主 specs 同步 |
-| 工具 | `scripts/archive-change.sh` |
+| 工具 | `spec-driven archive`(可先加 `--dry-run` 只看计划) |
 
-执行 `bash scripts/archive-change.sh <change>` 完成迁移与合并。合并规则见 `references/archive-rules.md`：delta-specs 按 `Capability ID` 路由，section 级合并进主 `specs/<capability>.md`，AC 重编号，scenario 冲突检测，决策从 `design.md` 蒸馏进 `decisions/<NNNN>-*.md` ADR。
+执行 `spec-driven archive` 完成迁移与合并：先跑 gate 8.9；spec.md 按 `Capability ID` 路由，按 REQ 粒度合并进主 `specs/<capability>.md`(同 ID 替换、新 ID 追加、SC ID 冲突即拦截)；决策从 `design.md` 蒸馏进 `decisions/<NNNN>-*.md` ADR(编号取现有最大值 +1)；补全 retrospective.md；`git mv` 到 `archive/<date>-<change>/`；最后在迁移后的目录上跑 gate 9。整个过程按事务处理，任一步失败都恢复原工件和 git 暂存区。
 
 ### 15.1 验证门 9
 
@@ -687,15 +691,15 @@ local-deploy 只在本机启动应用，不操作任何远程环境。
 | gate-1 | Phase 1 → 2 | 用户故事/AC 完整；Out of Scope 显式声明；歧义全 ✅；业务取值来源必须=用户；字段映射确认表；档位落定 | BLOCK(业务取值自填) |
 | gate-2 | Phase 2 → 3 | ≥2 方案 6 字段；推荐有理由；改选即回写(`.meta.json.designDecision` 与 design.md 一致)；影响面到文件路径；4 压测场景；复杂度复评(只升不降) | BLOCK(改选未回写) |
 | gate-3 | Phase 3 → 4 | 每 AC 映射到 SC；SC 是 H3/REQ 是 H2、WHEN/THEN 完整；接口契约节完整；数据模型节完整；复杂度复评 | BLOCK |
-| gate-4 | Phase 4 → 5 | 任务粒度 ≤2h；依赖顺序清晰；每任务关联 SC；bugfix 必有 T-regression | BLOCK(缺 T-regression) |
+| gate-4 | Phase 4 → 5 | 任务粒度 ≤2h；依赖顺序清晰；每任务关联 SC(跳过 Phase 3 的 feature 关联 AC，bugfix 关联修改点)；bugfix 必有 T-regression | BLOCK(缺 T-regression) |
 | gate-5 | Phase 5 → 6 | spec-review.md 由独立 subagent 产出(首行标记)；BLOCK=0；bugfix 未标"应升级 design" | BLOCK(主线自评) |
 | gate-6 | Phase 6 每任务 | 测试实际跑绿；有新增测试文件；测试运行数>0；集成测试按 `test.integration`；RED 先于 GREEN；无 scope 外文件；Task-Id trailer；JaCoCo 增量覆盖率 | BLOCK(0 测试 / skip / 覆盖率不达标) |
 | gate-6.5 | Phase 6 → 7 | `tasks-sync` 据 commit 补勾；tasks.md 无裸 `- [ ]`；`- [~]` 延期放行 | M/L/bugfix BLOCK、S WARN |
 | gate-6.7 | Phase 6 → 7 | ArchUnit/Checkstyle/SpotBugs/PMD/SQLFluff 命令驱动；基线区分存量违规；产出 `static-analysis-report.md` | 新增违规 BLOCK，所有档位一致 |
 | gate-7 | Phase 7 → 8 | qa-report.md 由独立 subagent 产出(首行标记)；所有 scenario PASS | BLOCK(主线自评) |
 | gate-8 | Phase 8 → 8.5 | code-review.md 由独立 subagent 产出(首行标记)；BLOCK=0；WARN 入 retrospective 待优化清单 | BLOCK(主线自评) |
-| gate-8.5 | Phase 8.5 | (选 y)deploy-report 结论=passed；(失败)回 Phase 6；(选 n/skip)retrospective 已记录 | BLOCK(启动失败) |
-| gate-8.9 | Phase 8.9 → 9 | `.meta.json.uatAccepted==true`；qa-report 无自评痕迹 | 拒绝归档 |
+| gate-8.5 | Phase 8.5 | (选 y)deploy-report 结论=passed；(失败)回 Phase 6；(选 n/skip)已由 `deploy skip` 标为跳过 | BLOCK(启动失败) |
+| gate-8.9 | Phase 8.9 → 9 | `.meta.json.uatAccepted==true`(经用户口令授权后由 `uat accept` 写入) | 拒绝归档 |
 | gate-9 | Phase 9 | 8.9 通过；change 目录已迁移；archive 完整；主 specs 同步；retrospective 已生成 | 拒绝归档 |
 
 ---
@@ -706,6 +710,6 @@ local-deploy 只在本机启动应用，不操作任何远程环境。
 2. AI 会建议一个 change name(kebab-case)，确认后创建 `.openspec/changes/<change>/` 骨架
 3. Phase 1 需求澄清，AI 整理出歧义清单，等你逐条回答后进 Phase 2
 4. 之后按 `proposal → design → spec → tasks → 实现 → QA → review → (本地部署) → 验收 → 归档` 顺序走，每阶段一道门，门不过就回上游修
-5. 任何时候想知道当前进度：`spec-driven status`；上下文紧张或冷启动恢复：`spec-driven resume`
+5. 任何时候想知道当前进度，直接问 AI「现在进度如何」；新开会话时说「继续上次的 change」，总控会先恢复上下文
 
-> 工件链开箱即用：首次接入时 `init-config --java` 生成默认配置，之后不需要改任何东西。只有用到本地集成(日志检索 / 本地部署 / Swagger 比对 / CodeGraph)时才需要按 `.openspec/.config.json` 配置，用不到就跳过。
+> 工件链开箱即用：首次接入时，总控会在你同意后接入质量检查工具并生成默认配置和基线，之后不需要改任何东西。只有用到本地集成(日志检索 / 本地部署 / Swagger 比对 / CodeGraph)时才需要按 `.openspec/.config.json` 配置，用不到就跳过。

@@ -43,12 +43,12 @@ T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告�
 
 | 事项 | 类别 | 负责 | 状态 |
 | --- | --- | --- | --- |
-| T9 本地分支 rebase 到最新 feature 分支，保留 implementation-generator「允许追加 implementation-log.md」的修正（26c14ed） | 小事项 | T9 | 待处理 |
-| 删除 T8 早期草稿 worktree `codex_dev/reins-T8-Codex-draft-3caa86c` 及分支 `task/T8-Codex-draft-3caa86c`（正式版已完整覆盖） | 小事项 | T8 或用户 | 待处理 |
+| T9 本地分支 rebase 到最新 feature 分支，保留 implementation-generator「允许追加 implementation-log.md」的修正（26c14ed） | 小事项 | T9 | ✅ 已完成（快进到 8b173f1） |
+| 删除 T8 早期草稿 worktree `codex_dev/reins-T8-Codex-draft-3caa86c` 及分支 `task/T8-Codex-draft-3caa86c`（正式版已完整覆盖） | 小事项 | T8 或用户 | ✅ 已删除 |
 | Windows 真实环境验证：`install.ps1`、Git Bash 下的 hook、Codex 经 PowerShell 的 hook | 验证 | 待定 | 延后到 T13 之后 |
 | gate 1「复评结果与已确认档位不一致时给提示」（workflow §5.3） | 小功能 | T3 | 延后 |
 | gate 6 集成测试 `auto` 模式依赖 `.meta.json` 的 `qa_mode`，目前无命令写入 | 缺口 | 协调者 | 延后 |
-| E2E-04：`spec-driven-workflow.md` 与现状不一致（旧脚本名、`tasks-sync --write` 应为 `--apply`、验收写状态方式、feature 不分档必走 2/3） | 文档 | 协调者 | 待处理 |
+| E2E-04：`spec-driven-workflow.md` 与现状不一致（旧脚本名、`tasks-sync --write` 应为 `--apply`、验收写状态方式、feature 不分档必走 2/3） | 文档 | 协调者 | ✅ 已完成 |
 
 ---
 
