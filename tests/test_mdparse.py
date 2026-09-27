@@ -208,6 +208,11 @@ TEMPLATE_KEYS = {
     "tasks.md": ["foundation", "domain-layer", "application-layer", "adapter-layer", "test-layer"],
     "implementation-log.md": ["change-scope", "red", "green", "refactor", "build", "coverage", "commits"],
     "deploy-report.md": ["deployment-info", "startup-result", "deployment-errors", "manual-acceptance", "conclusion"],
+    # Report skeletons from the cross-task contract (docs/dev/architecture.md §4.2, §4.4), added by T0.
+    "reports/spec-review.md": ["conclusion", "findings", "bugfix-upgrade"],
+    "reports/qa-report.md": ["conclusion", "findings", "sc-results"],
+    "reports/code-review.md": ["conclusion", "findings"],
+    "reports/static-analysis-report.md": ["conclusion", "new-violations", "baseline-violations", "repaid-violations"],
 }
 
 

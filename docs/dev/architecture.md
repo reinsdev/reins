@@ -215,6 +215,8 @@ Finding(level="BLOCK", check="ac-mapped", reason="AC-3 没有映射到任何 SC"
 | 提交 trailer（§4.3） | T8 的 tdd-implement、T9 的 implementation-generator | T2 的 taskstate、T6 的 commit-msg、T5 的 gate 6 |
 | 静态分析报告（§4.4） | T5 的 gate 6.7 | T9 的 code-reviewer |
 
+骨架模板在 `spec-driven-dev/templates/reports/`，由协调者维护结构，T1 的模板测试校验它们与 ALIASES 一致。
+
 标题一律经 `mdparse.find()` 按下文给出的 ALIASES 键查找，表格一律经 `mdparse.tables()` 读取。
 
 ### 4.2 评审报告：spec-review.md / qa-report.md / code-review.md

@@ -42,7 +42,7 @@
 2. 填 `ALIASES`：模板里每个会被 gate 查找的章节一个键（如 `out-of-scope`、`user-stories`、`ambiguities`、`field-mapping`、`interface-contract`、`data-model`、`final-choice`…）。每个键的第一个变体必须和模板标题完全一致；兼容中英文和常见写法。
 3. 实现 `parse / find / find_all / ids / tables / checkboxes` 和 `Section.text()`，行为以 docstring 为准。忽略围栏代码块里的标题和 ID；兼容 CRLF；表格支持转义竖线。
 4. 在本文件末尾的「别名索引」一节列出所有键和对应模板标题（这是本任务唯一允许改的 docs 文件段落）。
-5. 补充（契约新增）：按 architecture.md §4.2、§4.4 增加 ALIASES 键 `findings`（问题清单）、`sc-results`（SC 验证结果）、`bugfix-upgrade`（bugfix 升级判定）、`new-violations`（新增违规）、`baseline-violations`（存量违规）、`repaid-violations`（已偿还），并同步别名索引；`bugfix-analysis.md`、`proposal-bugfix.md` 标题里的占位符改为 `<change-name>`（`new` 只替换它）。
+5. 补充：`bugfix-analysis.md`、`proposal-bugfix.md` 标题里的占位符改为 `<change-name>`（`new` 只替换它）。评审报告相关的 6 个 ALIASES 键、`templates/reports/` 骨架和别名索引已由协调者按契约加好。
 
 **验收**
 - 每个模板经 `parse()` 后，`ALIASES` 里的每个键都能 `find()` 到。
@@ -185,11 +185,11 @@
 
 ## T9 4 个 agent + 评审报告模板
 
-**拥有的文件**：`agents/*.md`，`skills/spec-driven-dev/templates/reports/*.md`（新建：spec-review、qa-report、code-review 三份报告模板）
+**拥有的文件**：`agents/*.md`，`skills/spec-driven-dev/templates/reports/spec-review.md`、`qa-report.md`、`code-review.md`（骨架已由协调者按契约建好，只能补说明文字，不能改标题和表头）
 
 **要做的**
 - 每个 agent：角色、输入（只有路径）、必须遵守的约束（只写自己的报告、不改代码 / 工件、失败时怎么报告）、检查清单、报告格式。
-- 报告模板：严格按 architecture.md §4.2 写 spec-review、qa-report、code-review 三份模板；agent 的输出要求逐条对应该节（首行标记、结论表、问题清单、SC 验证结果、bugfix 升级判定）。code-reviewer 先读 static-analysis-report.md（§4.4）。
+- 报告模板：在已有骨架上补充填写说明，结构（标题、表头）不能改；agent 的输出要求逐条对应该节（首行标记、结论表、问题清单、SC 验证结果、bugfix 升级判定）。code-reviewer 先读 static-analysis-report.md（§4.4）。
 - implementation-generator：读 `tdd-implement` 规范（T8），提交 trailer 按 architecture.md §4.3，只改任务 scope 内的文件。
 - 保持 `tools` 与 `access` 一致（`tests/test_plugin.py` 会查）。
 
@@ -261,5 +261,11 @@
 | deployment-errors | deploy-report.md | 错误摘要与日志 |
 | manual-acceptance | deploy-report.md | 用户人工验收结论 |
 | conclusion | deploy-report.md | 结论 |
+| findings | reports/spec-review.md、reports/qa-report.md、reports/code-review.md | 问题清单 |
+| sc-results | reports/qa-report.md | SC 验证结果 |
+| bugfix-upgrade | reports/spec-review.md | bugfix 升级判定 |
+| new-violations | reports/static-analysis-report.md | 新增违规 |
+| baseline-violations | reports/static-analysis-report.md | 存量违规 |
+| repaid-violations | reports/static-analysis-report.md | 已偿还 |
 
 REQ / SC、单任务日志等动态标题通过 `find_all()` 与 `ID_PATTERNS` 查找，不为每个编号新增别名。`ids()` 按契约只提取数字 AC；bugfix 的固定 `AC-regression` 保留在验收标准表的 `AC` 列，可经 `tables()` 读取。
