@@ -29,4 +29,7 @@ COMMANDS = {
     "scope": "T11",
     "deploy": "T11",
     "quality": "T16",
+    "scaffold": "T18",
+    "trace": "T18",
+    "parallel": "T19",
 }

@@ -58,11 +58,11 @@ class Runner:
             raise FlowError("命令结果与预期不符")
         return stdout
 
-    def run(self, args, expected=(0,), stdin=None):
+    def run(self, args, expected=(0,), stdin=None, timeout=300):
         try:
             result = subprocess.run([str(s) for s in args], cwd=str(self.root),
                                     env=self.env, input=stdin, capture_output=True,
-                                    encoding="utf-8", errors="replace", timeout=300)
+                                    encoding="utf-8", errors="replace", timeout=timeout)
             code, out, err = result.returncode, result.stdout, result.stderr
         except (OSError, subprocess.TimeoutExpired) as exc:
             code, out, err = 124, "", str(exc)
@@ -237,6 +237,43 @@ class PointsTest {
         self.check("放行按指纹生效", "WAIVED" in output, output)
         self.advance("6")
 
+    def flow_q(self):
+        """T16: real onboarding, baseline, and new style/architecture debt."""
+        self.setup("Q")
+        self.git("mv", "src/main/java/demo/Points.java", "src/main/java/demo/DomainPoints.java")
+        old = self.root / "src/main/java/demo/DomainPoints.java"
+        text = old.read_text(encoding="utf-8").replace("package demo;", "package demo.domain;")
+        self.write("src/main/java/demo/domain/Points.java", text)
+        self.git("rm", "src/main/java/demo/DomainPoints.java")
+        test = self.root / "src/test/java/demo/PointsTest.java"
+        self.write(test.relative_to(self.root).as_posix(), test.read_text(encoding="utf-8").replace("new Points()", "new demo.domain.Points()"))
+        self.cli("quality", "setup", "--dry-run")
+        if self.offline:
+            self.cli("quality", "setup", expected=(2,))
+        else:
+            self.cli("quality", "setup", "--online", timeout=2400)
+        managed = [self.root / "pom.xml", self.root / ".openspec/.config.json",
+                   self.root / "src/test/java/demo/architecture/ReinsArchTest.java"]
+        before = [path.read_bytes() for path in managed]
+        self.cli("quality", "setup", expected=(2,))
+        self.check("重复接入文件不变", before == [path.read_bytes() for path in managed], "pom/config/ArchUnit test byte-identical")
+        self.cli("init-config", "--java", timeout=600)
+        self.cli("new", self.change)
+        self.cli("gate", "6.7", timeout=600)
+        source = self.root / "src/main/java/demo/domain/Points.java"
+        good = source.read_text(encoding="utf-8")
+        self.write(source.relative_to(self.root).as_posix(), good.replace("return amount;", "int Bad_variable = amount;\n        return Bad_variable;"))
+        bad = self.cli("gate", "6.7", "--json", expected=(3,), timeout=600)
+        findings = json.loads(bad)["findings"]
+        self.check("新增样式违规被识别", any(f["check"] == "checkstyle" and f["level"] == "BLOCK" for f in findings), findings)
+        self.write(source.relative_to(self.root).as_posix(), good)
+        self.cli("gate", "6.7", timeout=600)
+        self.write("src/main/java/demo/adapter/Boundary.java", "package demo.adapter;\npublic class Boundary { public static int value() { return 1; } }\n")
+        self.write(source.relative_to(self.root).as_posix(), good.replace("return amount;", "return demo.adapter.Boundary.value();"))
+        bad = self.cli("gate", "6.7", "--json", expected=(3,), timeout=600)
+        findings = json.loads(bad)["findings"]
+        self.check("Domain 依赖 Adapter 被 ArchUnit 拦截", any(f["check"] == "archunit" and f["level"] == "BLOCK" for f in findings), findings)
+
     def flow_c(self):
         self.setup("C")
         self.begin(bugfix=True)
@@ -357,7 +394,7 @@ class PointsTest {
 
 def main():
     parser = argparse.ArgumentParser(description="在临时目录运行真实 Java/CLI 联调，保留全部证据")
-    parser.add_argument("--flows", nargs="+", choices=["A", "B", "C"], default=["A", "B", "C"])
+    parser.add_argument("--flows", nargs="+", choices=["A", "B", "C", "Q"], default=["A", "B", "C"])
     parser.add_argument("--online", action="store_true", help="显式允许 Maven 下载依赖；默认离线")
     parser.add_argument("--maven-repo", type=Path, help="已有的 Maven 本地仓库")
     parser.add_argument("--diagnose", action="store_true", help="仅临时流程 A：记录阻塞后模拟口令放行以探查后续；最终仍返回失败")

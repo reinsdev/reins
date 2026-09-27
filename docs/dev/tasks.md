@@ -36,6 +36,8 @@
 | T15 | gate 6.7 质量检查的并发保护（含追加：初始化报错可定位） | — | 🔧 进行中（John） |
 | T16 | Java 质量工具接入：ArchUnit 自动接入，Checkstyle / PMD / SpotBugs 可直接运行 | T5 | 📋 待领取（建议 Json） |
 | T17 | S 档任务关联 AC（联调问题 E2E-01） | T1、T3、T8 | 📋 待领取（建议 Codex） |
+| T18 | 工件骨架生成 `scaffold` + 需求链追溯 `trace` | — | 📋 待领取 |
+| T19 | Phase 6 多实现者并行 `parallel` | T14 | 📋 待领取（优先级低，T14 合入后开工） |
 
 T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告的问题编号（E2E-01 至 E2E-04）见各任务说明。
 
@@ -433,6 +435,53 @@ T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告�
 - S 档 feature：任务关联 AC 时 gate 4 通过；关联不存在的 AC、有 AC 没被任何任务覆盖时拦截。
 - M 档 feature、bugfix 的原有 gate 4 测试全部照旧通过。
 - 用 T13 的联调脚本严格模式（不加 `--diagnose`）跑流程 A，能越过 gate 4（后续是否受 E2E-02 影响不在本任务验收内）。
+
+---
+
+## T18 工件骨架生成 `scaffold` + 需求链追溯 `trace`
+
+**目标**：两个文档里承诺过、但 CLI 没有的小功能。命令已登记（`commands/scaffold.py`、`commands/trace.py` 为桩），参数见 `--help`。
+
+**拥有的文件**
+- `commands/scaffold.py`、`commands/trace.py`（填实）、`traceability.py`（新建，放追溯逻辑）
+- `skills/spec-driven-dev/references/phase-1.md` 至 `phase-4.md`、`phase-6.md`、`phase-8.5.md`：只追加「先 `scaffold` 生成骨架再填写」的一句调用说明
+- `tests/test_scaffold.py`、`tests/test_trace.py`（新建）
+
+**要做的**
+1. **scaffold**
+   - 把 `templates/` 下对应模板复制到 change 目录，替换 `<change-name>`；bugfix 模式的 proposal 已由 `new` 生成，不在此列。
+   - 只允许生成**当前 Phase** 的工件（例如 Phase 2 只能生成 design），其他 Phase 的工件拒绝并说明原因，避免绕过上游冻结。
+   - 文件已存在时拒绝，不覆盖；写入用临时文件 + `os.replace`。
+2. **trace**
+   - 输入 AC / REQ / SC / 任务编号（格式按 `mdparse.ID_PATTERNS`），输出这条链：proposal 里的 AC → spec 里关联它的 SC 及所属 REQ → tasks 里关联它们的任务 → 带对应 `Task-Id` 的提交（区分 RED / GREEN）→ qa-report「SC 验证结果」里的结论。
+   - 查不到的环节明确标「缺失」，不猜；`--json` 输出机器可读结果。
+   - 解析一律经 `mdparse`；提交经 `taskstate` / `gitutil`；只读，不写任何文件。
+   - 默认查当前 change；归档后的 change 可以用 `--change` 指定（从 archive 目录读取）。
+
+**验收**
+- scaffold：各工件按 Phase 限制生成；已存在时不覆盖；生成的骨架能被对应 gate 的别名找到所有章节。
+- trace：从 AC、SC、任务编号三个方向都能查出完整链；缺环节时如实标出；S 档（无 spec）按 AC 直接关联任务。
+
+---
+
+## T19 Phase 6 多实现者并行 `parallel`
+
+**目标**：实现 `spec-driven-workflow.md` §10.3 描述的并行通道。命令已登记（`commands/parallel.py` 为桩）。优先级低，**T14（多实例安全）合入后再开工**，因为并行会同时存在多个 worktree 和多个实现者。
+
+**拥有的文件**
+- `commands/parallel.py`（填实）、`parallel.py`（新建）
+- `skills/spec-driven-dev/references/phase-6.md`：只追加并行通道的调用说明
+- `tests/test_parallel.py`（新建）
+
+**要做的**
+1. `plan`：只读预演。读 tasks.md 每个任务的「依赖」和「范围」字段构建依赖图，按依赖分层成波次，同一波内范围不重叠的任务才能同批；输出每波的任务和诚实的收益预估。依赖有环、范围缺失时拒绝并列出问题。
+2. `run`：用户确认后，从 `spec-parallel/<change>` 集成分支为本波每个任务建一个 git worktree，输出每个 worktree 的路径和任务，由总控分别派给 implementation-generator。只能在 `.openspec/.config.json` 的 `parallel.enabled=true` 时使用（新增配置项，默认 false，追加到 `config.DEFAULTS`）。
+3. `merge`：本波全部完成后，按任务顺序串行合回集成分支；遇到冲突立即中止、保留现场并报告，不自动解决、不覆盖；全部合回后跑 `tasks-sync --apply` 和 gate 6.5；最后把集成分支合回 change 的工作分支，清理本波 worktree。
+4. 每个 worktree 里 git hook 同样生效；worker 不得写 tasks.md（沿用 spec_gate 规则）。
+
+**验收**
+- 在临时仓库里：3 个任务（两个无依赖、一个依赖前者）分成两波；范围重叠的任务不会进同一波；有冲突时中止并保留现场；正常时合回后 gate 6.5 通过、worktree 被清理。
+- `parallel.enabled=false` 时 `run` / `merge` 拒绝执行。
 
 ---
 
