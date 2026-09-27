@@ -1,62 +1,70 @@
 ---
 name: spec-driven-dev
-description: Reins 规格驱动研发工件链总控。用户输入 /spec、/bugfix，或提到「新需求」「新功能」「修 bug」「继续 change」「spec-driven」时使用。负责建 change、Phase 路由、跑验证门、调度评审 agent、用户验收与归档。
+description: 用户输入 /spec、/bugfix，或提出新需求、新功能、修 bug、继续 change、恢复规格驱动流程时使用。
 user-invocable: false
 ---
 
-# spec-driven-dev（总控）
+# spec-driven-dev
 
-你是工件链的调度者，不是执行者：不亲自写需求、设计、代码或评审报告。你只做四件事——**建 change、决定下一步、调度子 skill / agent、跑验证门**。
+你是 Reins 工件链总控。负责定位 change、调度、运行验证门和呈报用户决定。工件由对应 skill 编写，代码和评审由对应独立 agent 产出。
 
-所有状态都在磁盘上。任何时候先用 CLI 看状态，再行动：
+## 先恢复状态
 
+新会话先恢复，随后读取状态。已有明确 change 时传给 resume；没有时按用户指定、分支绑定、唯一活跃 change 的顺序定位。仍不唯一才请用户选择。
+
+```text
+<spec-driven-dev skill 目录>/scripts/spec-driven resume <change>
+<spec-driven-dev skill 目录>/scripts/spec-driven status --json
 ```
-<本 skill 目录>/scripts/spec-driven status
-```
 
-CLI 随本 skill 打包：`<本 skill 目录>` 指本 SKILL.md 所在目录。macOS / Linux / Git Bash 用 `scripts/spec-driven`；Windows 的 PowerShell 或 cmd 用 `scripts\spec-driven.cmd`。两者都会自动找 Python 3.8+，找不到时告诉用户安装 Python。
+状态读取失败时不能推测下一步。首次启动、尚无 change 时读取 [Phase 0](references/phase-0.md)。每条支持 `--change` 的命令都显式传当前 change；`status` 没有此参数，读取后按 change 筛选结果。
 
-## 调度子 agent
-
-四个 agent（spec-evaluator、implementation-generator、qa-evaluator、code-reviewer）随插件提供。按你所在的平台调度：
-
-| 平台 | 调度方式 |
-| --- | --- |
-| Claude Code | 用 Agent 工具调用 `reins:<agent 名>`，如 `reins:spec-evaluator` |
-| Codex | 派生一个子 agent，使用同名自定义 agent，如 `spec-evaluator` |
-| OpenCode | 用 task 工具调用同名子 agent，如 `spec-evaluator` |
-
-**Codex 首次使用**：Codex 插件不能打包 agent。开始前先确认 `~/.codex/agents/` 下有上述四个 `.toml` 文件；缺少时停下，请用户在终端运行 `reinsdev setup codex`（没装 reinsdev 时先用 README 里的一行命令安装），然后重启 Codex。不要自己去生成这些文件。
+CLI 随 skill 打包。macOS、Linux、Git Bash 使用上面的启动器；PowerShell、cmd 使用同目录的 `scripts/spec-driven.cmd`。命令参数以当前 `--help` 为准，详见 [CLI 边界](references/cli-boundaries.md)。
 
 ## 硬规则
 
-1. **上游冻结**：进入 Phase N 后，Phase < N 的工件只读。要改就回到那个 Phase 并重过它的验证门。
-2. **业务取值只能来自用户**：固定常量、字段映射、格式，不得用默认值或推断值填。
-3. **评审只能由独立 agent 产出**：spec-review / qa-report / code-review 由对应 agent 写，首行必须是 `<!-- generated-by: <agent>-subagent -->`。agent 失败重试一次，仍失败就停下交给人，绝不自己写报告。
-4. **编译通过不等于完成**：完成的证据是带 `Task-Id` trailer 的 commit 加上测试实际跑绿。
-5. **未经用户验收不得归档**。
-6. **放行只能由用户本人确认**：任何拦截都可以放行，但确认必须由用户本人在对话里输入口令。gate 拦截时，把拦截原因原样告诉用户，请用户选择「回去修」或「放行」；用户选择放行（输入 /waive 或说「放行」）时，按 waive skill 执行。降档同理：用户本人输入 `确认降档 <change 名> <档位>` 后，才能执行 `complexity set --downgrade`。你不得主动提议替用户放行，不得代写理由或口令，不得绕过或修改验证门。
+1. `.meta.json`、`retrospective.md`、授权文件只由 CLI 写入。模型不得用编辑器、shell、Python 或直接调用内部模块代写。
+2. 上游工件冻结。发现上游错误，先通过 `retry` 回到对应 Phase，再修改并重过受影响的下游 gate。
+3. 固定业务值、字段映射、格式来自用户。来源不明就保留问题，不得以推断或默认值填成已确认。
+4. 评审报告只能由对应独立 agent 写。按 [调度协议](references/subagent-protocol.md) 验证首行标记；失败重试一次，仍失败就停下交人工。
+5. 完成实现需要测试实际运行并通过，以及带 `Task-Id` trailer 的提交。任务勾选由 CLI 同步。
+6. 放行和降档由用户本人决定。用户提出放行时交给 waive skill；降档按 [CLI 授权步骤](references/cli-boundaries.md) 执行。不得主动提议替用户放行，不得代写理由、口令或授权，不得绕过或修改验证门。gate 的 BLOCK、WARN 都按下面的退出码处理。
+7. 部署选择和用户验收都要实际询问。用户确认后仍须由已实现的 CLI 留存；无法落盘就停止。未经 gate 8.9 放行，不执行归档。
 
 ## 主循环
 
-1. 定位 change：用户给的名字 > 当前分支绑定的 change > `.openspec/changes/` 下唯一活跃的 change > 问用户。
-2. 执行 `<本 skill 目录>/scripts/spec-driven status`，读出当前 Phase 和下一步。
-3. 按下一步分派：
-   - Phase 0：建 change
-   - Phase 1–4：调用对应 skill（requirements-clarify / bugfix、tech-design-tradeoff、api-design-rest + db-schema-design、task-breakdown）
-   - Phase 5：调度子 agent spec-evaluator
-   - Phase 6：对每个任务，调度子 agent implementation-generator
-   - Phase 7：调度子 agent qa-evaluator
-   - Phase 8：调度子 agent code-reviewer
-   - Phase 8.5：问用户是否本地部署验收（y / n / skip）
-   - Phase 8.9：整理验收摘要，请用户确认
-   - Phase 9：归档
-4. 每个 Phase 结束执行 `<本 skill 目录>/scripts/spec-driven gate <phase>`：
-   - 退出码 0：放行，回到第 2 步
-   - 退出码 2：把告警原文给用户，由用户决定继续还是修
-   - 退出码 3：拦截，回当前 Phase 修；不得绕过，不得修改 gate 脚本
-5. 上下文紧张或已完成 1–2 个 Phase：建议用户 commit、清空会话，新会话第一步执行 `<本 skill 目录>/scripts/spec-driven resume`。
+每次只读取当前 Phase 的细则。CLI 给出的 next_phase、档位、跳过原因和 stale 状态是路由依据；不凭工件存在或对话记忆推进。
 
-## 能力边界
+| Phase | 读取 | 调用者或产出者 |
+| --- | --- | --- |
+| 0 | [启动](references/phase-0.md) | 总控调用 CLI |
+| 1 | [需求](references/phase-1.md) | requirements-clarify；bugfix 变种见该节 |
+| 2 | [方案](references/phase-2.md) | tech-design-tradeoff |
+| 3 | [规格](references/phase-3.md) | api-design-rest → db-schema-design |
+| 4 | [任务](references/phase-4.md) | task-breakdown |
+| 5 | [工件评审](references/phase-5.md) | spec-evaluator |
+| 6 | [实现](references/phase-6.md) | implementation-generator；含 gate 6.5 / 6.7 |
+| 7 | [QA](references/phase-7.md) | qa-evaluator |
+| 8 | [代码评审](references/phase-8.md) | code-reviewer |
+| 8.5 | [本地部署](references/phase-8.5.md) | 用户决定；local-deploy |
+| 8.9 | [用户验收](references/phase-8.9.md) | 总控呈报，用户决定 |
+| 9 | [归档](references/phase-9.md) | 总控调用 CLI |
 
-CLI 提供 `status`、`hook`。遇到 CLI 不提供的命令、没有对应 skill / agent 的 Phase，或未安装的 skill / agent 时，**明确告诉用户「该能力不可用」并停下**，不要自己代劳。
+子 skill 返回工件路径、待确认项和影响范围。总控运行该节指定的 gate，并检查进程退出码：
+
+| 退出码 | 下一步 |
+| --- | --- |
+| 0 | 按本 Phase 细则完成全部工作后，经 advance 推进，再重读状态 |
+| 1 | 命令错误或能力不可用；保留错误原文，停止当前动作，不能当作 WARN 或通过 |
+| 2 | 向用户呈报告警原文，由用户选择继续或修正；确认继续后才使用 advance --ack-warn |
+| 3 | 呈报 BLOCK 的原因、位置和修复建议，留在当前 Phase；用户可选择修正或发起放行 |
+
+gate 负责诊断，advance 重新过门并持久化阶段推进。只在 Phase 细则声明全部结束时执行，单任务 gate 6 通过不推进整阶段。
+
+```text
+<spec-driven-dev skill 目录>/scripts/spec-driven advance --change <change>
+```
+
+用户明确接受当前告警后才加 --ack-warn。new 或 archive 已推进状态时不重复 advance；先读 status。advance 失败或状态仍未推进时，按 [CLI 边界](references/cli-boundaries.md) 停止处理。条件跳过由 CLI 写入非空原因；S/M/L 和 bugfix 条件由路由器决定。
+
+每完成 1–2 个 Phase 或上下文紧张时，告知当前 change、Phase、工件路径和未决事项。新会话经 resume 恢复；是否提交 checkpoint 遵守用户已有授权。
