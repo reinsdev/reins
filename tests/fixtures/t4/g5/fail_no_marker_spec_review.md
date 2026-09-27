@@ -1,3 +1,12 @@
-# Spec Review - missing marker
+# Spec Review: test-change (missing generated-by)
 
-[WARN] some-check — proposal.md 用户故事描述不够具体 → 补充具体场景  #abc12345
+## 结论
+
+| BLOCK | WARN | INFO |
+| --- | --- | --- |
+| 0 | 0 | 0 |
+
+## 问题清单
+
+| 级别 | 位置 | 问题 | 建议 |
+| --- | --- | --- | --- |

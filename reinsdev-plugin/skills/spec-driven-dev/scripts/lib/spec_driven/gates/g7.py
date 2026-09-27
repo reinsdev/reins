@@ -1,66 +1,28 @@
-"""gate-7: QA 评审报告校验（subagent 标记、降级措辞、所有 SC PASS）.
-Owner: T4. Rules: design doc §6.2, spec-driven-workflow.md §11.1.
+"""gate-7: QA 评审报告校验（subagent 标记、降级措辞、格式契约、所有 SC PASS）.
+Owner: T4. Rules: design doc §6.2, architecture.md §4.2, spec-driven-workflow.md §11.1.
 
 Checks (all kebab-case, stable):
   g7-generated-by      首行 generated-by 标记（locked）
   g7-demotion-phrase   禁止「主线自评」「直接根据代码验证」等降级措辞（locked）
-  g7-sc-pass           spec.md 里的每个 SC 在 qa-report 里都为 PASS
+  g7-conclusion-table  「结论」表存在且格式正确（表头、非负整数、计数一致）
+  g7-findings-table    「问题清单」表存在且「级别」取值合法
+  g7-sc-results-table  「SC 验证结果」表存在且格式正确
+  g7-sc-pass           spec.md 里的每个 SC 在「SC 验证结果」表里都有一行且「结果」为 PASS
 """
 
-import re
 from typing import List
 
 from .. import mdparse
 from ..project import QA_REPORT, SPEC
 from . import Finding, GateContext
+from .g5 import _check_report_tables, _read
 
 _AGENT = "qa-evaluator-subagent"
 
-_DEMOTION_PHRASES = [
-    "主线自评",
-    "直接根据代码验证",
-]
+_DEMOTION_PHRASES = ["主线自评", "直接根据代码验证"]
 
-# Column names that hold the per-SC result in a qa-report table.
-_RESULT_COL_NAMES = {"结果", "Result", "Status", "状态"}
-
-
-def _read(change_dir, filename):
-    path = change_dir / filename
-    if not path.is_file():
-        return None
-    return path.read_text(encoding="utf-8").replace("\r\n", "\n")
-
-
-def _sc_results(text):
-    """Return {sc_id: result_upper} from the qa-report.
-
-    Primary path: mdparse.tables() looking for a table with an 'SC' column.
-    Fallback: regex scan using ID_PATTERNS["SC"] for inline "SC-xxx | PASS" forms.
-    """
-    results = {}
-    _sc_re = mdparse.id_re("SC")
-
-    for table in mdparse.tables(text):
-        if "SC" not in table.header:
-            continue
-        result_col = next((h for h in table.header if h in _RESULT_COL_NAMES), None)
-        if result_col is None:
-            continue
-        for row in table.rows:
-            m = _sc_re.search(row.get("SC", ""))
-            if m:
-                results[m.group(0)] = row.get(result_col, "").strip().upper()
-
-    if not results:
-        _fallback = re.compile(
-            r"(%s)\s*[|:]\s*(PASS|FAIL|SKIP)" % mdparse.ID_PATTERNS["SC"],
-            re.IGNORECASE,
-        )
-        for m in _fallback.finditer(text):
-            results[m.group(1)] = m.group(2).upper()
-
-    return results
+_SC_RESULTS_HEADER = ["SC", "结果", "证据"]
+_VALID_RESULTS = {"PASS", "FAIL"}
 
 
 def check(ctx: GateContext) -> List[Finding]:
@@ -105,7 +67,61 @@ def check(ctx: GateContext) -> List[Finding]:
             locked=True,
         ))
 
-    # Check 3: every SC in spec.md must be PASS in the qa-report.
+    # Checks 3-4: conclusion + findings tables.
+    _check_report_tables("g7", text, QA_REPORT, findings)
+
+    # Check 5: SC 验证结果 table.
+    root = mdparse.parse(text)
+    sc_results_section = mdparse.find(root, "sc-results")
+    if sc_results_section is None:
+        findings.append(Finding(
+            level="BLOCK",
+            check="g7-sc-results-table",
+            reason="qa-report.md 缺少「SC 验证结果」节（## SC 验证结果）",
+            location=QA_REPORT,
+            fix="添加「## SC 验证结果」节及规定格式的表格",
+        ))
+        return findings
+
+    sc_tables = mdparse.tables(sc_results_section.body)
+    if not sc_tables:
+        findings.append(Finding(
+            level="BLOCK",
+            check="g7-sc-results-table",
+            reason="「SC 验证结果」节缺少表格",
+            location=QA_REPORT,
+            fix="添加格式为「| SC | 结果 | 证据 |」的表格",
+        ))
+        return findings
+
+    sc_table = sc_tables[0]
+    if sc_table.header != _SC_RESULTS_HEADER:
+        findings.append(Finding(
+            level="BLOCK",
+            check="g7-sc-results-table",
+            reason="「SC 验证结果」表头不符合契约，应为「SC | 结果 | 证据」，实际为「%s」"
+                   % " | ".join(sc_table.header),
+            location=QA_REPORT,
+            fix="将表头改为「| SC | 结果 | 证据 |」",
+            evidence="header=%s" % "|".join(sc_table.header),
+        ))
+        return findings
+
+    bad_results = [r.get("结果", "").strip() for r in sc_table.rows
+                   if r.get("结果", "").strip() not in _VALID_RESULTS]
+    if bad_results:
+        findings.append(Finding(
+            level="BLOCK",
+            check="g7-sc-results-table",
+            reason="「SC 验证结果」有非法「结果」取值（只能是 PASS 或 FAIL）：%s"
+                   % "、".join(bad_results[:5]),
+            location=QA_REPORT,
+            fix="将「结果」列改为 PASS 或 FAIL 之一",
+            evidence="|".join(bad_results[:10]),
+        ))
+        return findings
+
+    # Check 6: every SC in spec.md must have a PASS row.
     spec_text = _read(ctx.change_dir, SPEC)
     if spec_text is None:
         findings.append(Finding(
@@ -119,8 +135,6 @@ def check(ctx: GateContext) -> List[Finding]:
 
     spec_root = mdparse.parse(spec_text)
     sc_sections = mdparse.find_all(spec_root, mdparse.ID_PATTERNS["SC"])
-    # Extract the SC ID (e.g. "SC-policy-001") from the full title which may include
-    # a description suffix like ": 全部审批通过".
     _sc_re = mdparse.id_re("SC")
     sc_ids = []
     for s in sc_sections:
@@ -131,16 +145,31 @@ def check(ctx: GateContext) -> List[Finding]:
     if not sc_ids:
         return findings
 
-    results = _sc_results(text)
-    failed = [sc for sc in sc_ids if results.get(sc, "") != "PASS"]
-    if failed:
+    # Build lookup from the SC 验证结果 table (SC column holds just the ID).
+    report_results = {}
+    for row in sc_table.rows:
+        sc_cell = row.get("SC", "").strip()
+        m = _sc_re.search(sc_cell)
+        if m:
+            report_results[m.group(0)] = row.get("结果", "").strip()
+
+    missing = [sc for sc in sc_ids if sc not in report_results]
+    failed = [sc for sc in sc_ids if report_results.get(sc, "") == "FAIL"]
+
+    if missing or failed:
+        bad = sorted(set(missing + failed))
+        reason_parts = []
+        if missing:
+            reason_parts.append("缺行：%s" % " ".join(missing))
+        if failed:
+            reason_parts.append("FAIL：%s" % " ".join(failed))
         findings.append(Finding(
             level="BLOCK",
             check="g7-sc-pass",
-            reason="qa-report 有 %d 个 SC 未 PASS：%s" % (len(failed), " ".join(failed)),
+            reason="qa-report SC 验证结果不满足要求（%s）" % "；".join(reason_parts),
             location=QA_REPORT,
-            fix="修复失败场景或由用户确认接受风险后放行",
-            evidence=" ".join(failed),
+            fix="修复失败场景后重新评审，或由用户确认接受风险后放行",
+            evidence=" ".join(bad),
         ))
 
     return findings
