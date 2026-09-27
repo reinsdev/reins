@@ -165,3 +165,92 @@ class LockTest(unittest.TestCase):
                 self.assertNotEqual(original, successor)
                 self.assertTrue(path.exists())
             self.assertFalse(path.exists())
+
+
+def append_todos(directory, start, worker):
+    if not start.wait(10):
+        raise RuntimeError('workers were not started')
+    for item in range(15):
+        retro.add_todo(Path(directory), 'concurrent', '%s-%s' % (worker, item))
+
+
+class RetroConcurrencyTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.directory = Path(self.tmp.name) / 'change'
+        self.directory.mkdir()
+        env = mock.patch.dict(os.environ, {'REINS_HOME': str(Path(self.tmp.name) / 'home')})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_failed_replace_keeps_previous_complete_document(self):
+        retro.add_todo(self.directory, 'test', 'original')
+        before = (self.directory / 'retrospective.md').read_bytes()
+        with mock.patch('os.replace', side_effect=OSError('injected replace failure')):
+            with self.assertRaises(OSError):
+                retro.add_todo(self.directory, 'test', 'next')
+        self.assertEqual((self.directory / 'retrospective.md').read_bytes(), before)
+        self.assertTrue(retro.verify(self.directory))
+        self.assertEqual(sorted(p.name for p in self.directory.iterdir()), ['.retro.sha256', 'retrospective.md'])
+
+    def test_each_atomic_write_has_its_own_temporary_path(self):
+        sources = []
+        replace = os.replace
+
+        def observe(source, destination):
+            sources.append(Path(source))
+            self.assertEqual(Path(source).parent, Path(destination).parent)
+            self.assertNotEqual(Path(source), Path(destination))
+            replace(source, destination)
+
+        with mock.patch('os.replace', side_effect=observe):
+            retro.add_todo(self.directory, 'test', 'first')
+            retro.add_todo(self.directory, 'test', 'second')
+        self.assertEqual(len(sources), 4)
+        self.assertEqual(len(set(sources)), 4)
+        self.assertTrue(retro.verify(self.directory))
+
+    def test_verify_reloads_document_and_signature_after_mismatch(self):
+        retro.add_todo(self.directory, 'test', 'old')
+        document = self.directory / 'retrospective.md'
+        document.write_text('intermediate\n', encoding='utf-8')
+
+        def finish_write(_):
+            document.write_text('complete\n', encoding='utf-8')
+            (self.directory / retro.SIG_FILE).write_text(retro.signature('complete\n'), encoding='utf-8')
+
+        with mock.patch('time.sleep', side_effect=finish_write):
+            self.assertTrue(retro.verify(self.directory))
+
+    def test_verify_retries_signature_without_replacing_explicit_staged_text(self):
+        retro.add_todo(self.directory, 'test', 'old')
+        document = self.directory / 'retrospective.md'
+        document.write_text('staged\n', encoding='utf-8')
+
+        def finish_signature(_):
+            (self.directory / retro.SIG_FILE).write_text(retro.signature('staged\n'), encoding='utf-8')
+
+        with mock.patch('time.sleep', side_effect=finish_signature):
+            self.assertTrue(retro.verify(self.directory, 'staged\n'))
+            self.assertFalse(retro.verify(self.directory, 'forged\n'))
+
+    def test_spawn_append_preserves_all_rows_and_signature(self):
+        ctx = multiprocessing.get_context('spawn')
+        start = ctx.Event()
+        children = [ctx.Process(target=append_todos, args=(str(self.directory), start, n)) for n in range(4)]
+        for child in children:
+            child.start()
+        start.set()
+        try:
+            for child in children:
+                child.join(15)
+                self.assertEqual(child.exitcode, 0)
+        finally:
+            for child in children:
+                if child.is_alive():
+                    child.terminate()
+                    child.join()
+        self.assertEqual(set(retro.todos(self.directory)), {'%s-%s' % (w, i) for w in range(4) for i in range(15)})
+        self.assertEqual(len(retro.todos(self.directory)), 60)
+        self.assertTrue(retro.verify(self.directory))
