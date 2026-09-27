@@ -59,6 +59,8 @@ def _bind_branch(root: Path, change: str, mode: str, create: bool) -> str:
     want = "%s/%s" % ("fix" if mode == "bugfix" else "feat", change)
     if current == want:
         return want
+    if gitutil.git(["status", "--porcelain", "--untracked-files=all"], root):
+        fail("工作区有未提交改动，不能切换分支；请为这个 change 新建 git worktree，或加 --no-branch")
     exists = gitutil.git(["branch", "--list", want], root)
     gitutil.git(["switch", want] if exists else ["switch", "-c", want], root)
     return want
