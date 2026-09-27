@@ -335,3 +335,58 @@ class LogTest(unittest.TestCase):
     def test_log_io_failure_does_not_block(self):
         with mock.patch('os.open', side_effect=OSError('disk full')):
             self.assertIsNone(hook._record({'kind': 'shell'}, 'allow'))
+
+
+class HookRefreshTest(ProjectTest):
+    def install_old(self, existing=False):
+        old = self.root / 'old-plugin/spec-driven'
+        if existing:
+            old.parent.mkdir()
+            old.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+        with mock.patch.object(githook, 'LAUNCHER', old):
+            githook.install(self.root)
+        return old
+
+    def test_status_refreshes_missing_and_outdated_cli_preserving_foreign_hook(self):
+        self.change()
+        hooks = self.root / '.git/hooks'
+        foreign = '#!/bin/sh\necho foreign\n'
+        (hooks / 'pre-commit').write_text(foreign, encoding='utf-8')
+        for exists in (False, True):
+            with self.subTest(old_cli_exists=exists):
+                old = self.install_old(exists)
+                code, out, err = invoke('status', '--json')
+                self.assertEqual(code, 0, err)
+                self.assertEqual(json.loads(out)['changes'][0]['change'], 'first-change')
+                for event in githook.EVENTS:
+                    text = (hooks / event).read_text(encoding='utf-8')
+                    self.assertIn(githook.LAUNCHER.as_posix(), text)
+                    self.assertNotIn(old.as_posix(), text)
+                self.assertEqual((hooks / 'pre-commit.reins-chained').read_text(encoding='utf-8'), foreign)
+
+    def test_advance_refreshes_hook_even_when_gate_blocks(self):
+        self.change()
+        self.install_old()
+        code, out, err = invoke('advance', '--change', 'first-change')
+        self.assertEqual(code, 3, out + err)
+        self.assertIn(githook.LAUNCHER.as_posix(), (self.root / '.git/hooks/pre-commit').read_text(encoding='utf-8'))
+
+    def test_refresh_error_only_warns_and_keeps_command_result(self):
+        self.change()
+        self.install_old()
+        with mock.patch.object(githook, 'install', side_effect=OSError('busy hooks')):
+            code, out, err = invoke('status', '--json')
+            self.assertEqual(code, 0)
+            self.assertTrue(json.loads(out)['enabled'])
+            self.assertIn('busy hooks', err)
+            code, out, err = invoke('advance', '--change', 'first-change')
+            self.assertEqual(code, 3)
+            self.assertIn('busy hooks', err)
+
+    def test_missing_launcher_warns_but_commit_succeeds(self):
+        self.install_old()
+        (self.root / 'code.txt').write_text('code', encoding='utf-8')
+        self.git('add', 'code.txt')
+        # Git's hook runner executes the installed shell script on every platform.
+        self.git('commit', '-qm', 'commit without installed plugin')
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'commit without installed plugin')

@@ -13,7 +13,11 @@ def register(sub):
 
 
 def run(a) -> int:
+    from . import githook
+
     project = Project.here()
+    if project.enabled:
+        githook.ensure_current(project.root)
     cfg = config.load(project) if project.enabled else {}
     changes = []
     explicit = getattr(a, "change", None)

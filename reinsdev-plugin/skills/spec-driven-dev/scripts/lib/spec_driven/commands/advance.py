@@ -15,7 +15,11 @@ def register(sub):
 
 
 def run(a) -> int:
+    from . import githook
+
     project = Project.here()
+    if project.enabled:
+        githook.ensure_current(project.root)
     change, change_dir, m = locate.load(project, a.change)
     cfg = config.load(project)
     current = m["phase"]
