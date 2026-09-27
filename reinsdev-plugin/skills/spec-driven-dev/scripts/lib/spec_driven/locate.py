@@ -18,7 +18,8 @@ def _branch_of(project: Project, change: str) -> Optional[str]:
 def resolve(project: Project, explicit: Optional[str] = None) -> str:
     """explicit name > change bound to the current git branch (meta.branch) > the only
     active change > errors.fail() listing the candidates. Also fails when the project has
-    no .openspec/ ("尚未启用 Reins，用 /spec 开始")."""
+    no .openspec/ ("尚未启用 Reins，用 /spec 开始").
+    Multi-instance callers must supply an explicit change name."""
     if not project.enabled:
         fail("项目 %s 尚未启用 Reins（没有 .openspec/），用 /spec 开始" % project.root)
     active = project.active_changes()

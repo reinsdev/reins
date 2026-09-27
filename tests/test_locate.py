@@ -16,10 +16,12 @@ class LocateTest(unittest.TestCase):
         with java_repo() as root:
             cli("new", "first-change")
             self.assertEqual(locate.resolve(Project(root)), "first-change")
+            git(root, "add", ".openspec")
+            git(root, "commit", "-qm", "save first change before switching")
             cli("new", "second-change")          # now on feat/second-change
             self.assertEqual(locate.resolve(Project(root)), "second-change")
             self.assertEqual(locate.resolve(Project(root), "first-change"), "first-change")
-            git(root, "switch", "-q", "main")
+            git(root, "switch", "-q", "-c", "unbound-branch")
             with self.assertRaises(SystemExit) as cm:
                 locate.resolve(Project(root))
             self.assertIn("多个", str(cm.exception.code))

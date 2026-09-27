@@ -16,7 +16,10 @@ pre-commit hook compares to catch edits that did not go through the CLI.
 
 import datetime
 import hashlib
+import os
 import re
+import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -95,6 +98,23 @@ def _rows(change_dir: Path, table) -> List[List[str]]:
     return [r for r in (_split(l) for l in lines[span[0]:span[1]]) if len(r) == width]
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n",
+                                         dir=str(path.parent), prefix=path.name + ".",
+                                         suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(text)
+        os.replace(str(temporary), str(path))
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
+
+
 def _append(change_dir: Path, table, cells: List[str]) -> None:
     change_dir = Path(change_dir)
     path = change_dir / RETROSPECTIVE
@@ -109,8 +129,8 @@ def _append(change_dir: Path, table, cells: List[str]) -> None:
             span = (len(lines), len(lines))
         lines.insert(span[1], _row(cells))
         text = "\n".join(lines) + "\n"
-        path.write_bytes(text.encode("utf-8"))
-        (change_dir / SIG_FILE).write_bytes((signature(text) + "\n").encode("ascii"))
+        _atomic_write(path, text)
+        _atomic_write(change_dir / SIG_FILE, signature(text) + "\n")
 
 
 def verify(change_dir: Path, text: Optional[str] = None) -> bool:
@@ -118,12 +138,19 @@ def verify(change_dir: Path, text: Optional[str] = None) -> bool:
     A change without retrospective.md and without a signature verifies."""
     change_dir = Path(change_dir)
     sig = change_dir / SIG_FILE
-    if text is None:
-        path = change_dir / RETROSPECTIVE
-        text = path.read_text(encoding="utf-8") if path.is_file() else None
-    if text is None:
-        return True
-    return sig.is_file() and sig.read_text(encoding="ascii").strip() == signature(text)
+    for attempt in range(2):
+        current = text
+        if current is None:
+            path = change_dir / RETROSPECTIVE
+            current = path.read_text(encoding="utf-8") if path.is_file() else None
+        if current is None:
+            return not sig.is_file()
+        if sig.is_file() and sig.read_text(encoding="utf-8").strip() == signature(current):
+            return True
+        if attempt == 0:
+            # A reader may observe the document before its signature is replaced.
+            time.sleep(0.05)
+    return False
 
 
 def waivers(change_dir: Path) -> List[Waiver]:

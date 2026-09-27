@@ -18,7 +18,7 @@ def prompt(ev: dict) -> Optional[str]:
     if not TRIGGER.search(ev.get("prompt") or ""):
         return None
     project = project_of(ev)
-    if project is None:
+    if project is None or len(project.active_changes()) != 1:
         return None
     try:
         change = locate.resolve(project)

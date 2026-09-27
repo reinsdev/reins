@@ -8,6 +8,7 @@ Every write goes through `update()`, which holds the change lock.
 import json
 import os
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Iterator
@@ -109,6 +110,7 @@ def lock(change_dir: Path) -> Iterator[None]:
     """Exclusive lock via `os.open(<change_dir>/.meta.lock, O_CREAT | O_EXCL)`, with
     LOCK_TIMEOUT and stale-lock cleanup; identical behaviour on macOS, Linux, Windows."""
     path = Path(change_dir) / LOCK_FILE
+    owner = "%s:%s" % (os.getpid(), uuid.uuid4().hex)
     deadline = time.monotonic() + LOCK_TIMEOUT
     while True:
         try:
@@ -125,13 +127,16 @@ def lock(change_dir: Path) -> Iterator[None]:
                 fail("%s 被另一个进程占用（锁文件 %s）；确认没有其他命令在运行后删除它" % (change_dir, path))
             time.sleep(0.05)
     try:
-        os.write(fd, str(os.getpid()).encode("ascii"))
-        os.close(fd)
+        try:
+            os.write(fd, owner.encode("ascii"))
+        finally:
+            os.close(fd)
         yield
     finally:
         try:
-            path.unlink()
-        except OSError:
+            if path.read_text(encoding="utf-8") == owner:
+                path.unlink()
+        except (OSError, UnicodeError):
             pass
 
 

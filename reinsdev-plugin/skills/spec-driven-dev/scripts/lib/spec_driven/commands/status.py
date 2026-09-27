@@ -2,20 +2,27 @@
 
 import json
 
-from .. import config, router
+from .. import config, locate, router
 from ..project import META, Project
 
 
 def register(sub):
     s = sub.add_parser("status", help="查看各 change 的进度")
     s.add_argument("--json", action="store_true")
+    s.add_argument("--change")
 
 
 def run(a) -> int:
+    from . import githook
+
     project = Project.here()
+    if project.enabled:
+        githook.ensure_current(project.root)
     cfg = config.load(project) if project.enabled else {}
     changes = []
-    for name in project.active_changes():
+    explicit = getattr(a, "change", None)
+    names = [locate.resolve(project, explicit)] if explicit else project.active_changes()
+    for name in names:
         try:
             data = json.loads((project.change_dir(name) / META).read_text(encoding="utf-8"))
             nxt = router.summary(data, cfg)

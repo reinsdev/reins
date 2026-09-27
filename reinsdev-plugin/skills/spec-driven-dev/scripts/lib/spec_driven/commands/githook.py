@@ -12,13 +12,14 @@ Rejections print the reason and exit 1; anything unexpected lets the commit thro
 
 import os
 import re
+import shlex
 import stat
 import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional
 
-from .. import gitutil, locate, mdparse, retro
+from .. import gitutil, locate, mdparse, retro, taskstate
 from .. import project as P
 from ..errors import ERROR, OK, fail
 from ..meta import PHASES
@@ -39,16 +40,16 @@ def register(sub):
 def _script(event: str) -> str:
     return """#!/bin/sh
 %s (spec-driven githook install); do not edit
-CLI="%s"
+CLI=%s
 if [ -f "$CLI" ]; then
   sh "$CLI" githook %s "$@" || exit $?
 else
-  echo "reins: 找不到 $CLI，本次跳过 Reins 检查；继续当前 change 时会自动重新安装" >&2
+  echo "Reins 警告：找不到 $CLI，本次没有执行 Reins 检查。请用 reinsdev update 更新插件，再让当前会话查看状态以自动修复。" >&2
 fi
 if [ -x "$0.reins-chained" ]; then
   exec "$0.reins-chained" "$@"
 fi
-""" % (MARK, LAUNCHER.as_posix(), event)
+""" % (MARK, shlex.quote(LAUNCHER.as_posix()), event)
 
 
 def install(root: Path) -> List[str]:
@@ -69,6 +70,26 @@ def install(root: Path) -> List[str]:
         path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         written.append(str(path))
     return written
+
+
+def ensure_current(root: Path) -> None:
+    """Refresh installed Reins hooks after upgrades; diagnostics never change command results."""
+    try:
+        hooks = Path(gitutil.git(["rev-parse", "--git-path", "hooks"], root))
+        if not hooks.is_absolute():
+            hooks = Path(root) / hooks
+        scripts = {}
+        for event in EVENTS:
+            path = hooks / event
+            scripts[event] = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+        if not any(MARK in script for script in scripts.values()):
+            return
+        if not LAUNCHER.is_file():
+            raise OSError("当前插件 CLI 不存在：%s" % LAUNCHER)
+        if any(scripts[event] != _script(event) for event in EVENTS):
+            install(root)
+    except (Exception, SystemExit) as exc:
+        sys.stderr.write("Reins 提示：git hook 自动修复失败（%s）；请用 reinsdev update 更新插件后重试。\n" % exc)
 
 
 def _staged(root: Path) -> List[str]:
@@ -105,7 +126,13 @@ def pre_commit(project: Project) -> List[str]:
         if PHASES.index(produced) >= PHASES.index(m["phase"]):
             continue
         before = _show(root, "HEAD:" + path)
-        if before is not None and before != _show(root, ":" + path):
+        staged = _show(root, ":" + path)
+        if before is not None and before != staged:
+            if name == P.TASKS and m["phase"] == "6":
+                done = taskstate.done_tasks(project, m)
+                # render changes only task checkboxes; compare the index, never the working file.
+                if staged == taskstate.render(before, done):
+                    continue
             problems.append("%s 属于 Phase %s，已冻结（当前 Phase %s）；要改请先回退：spec-driven retry %s --reason ..."
                             % (path, produced, m["phase"], produced))
     return problems

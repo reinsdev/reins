@@ -14,6 +14,7 @@ module only translates between the platforms and that chain.
 """
 
 import json
+import os
 import re
 import sys
 import time
@@ -21,6 +22,8 @@ import time
 from . import policies
 from .paths import reins_home
 from .policies.probe import PROBE  # noqa: F401  (re-exported for tests)
+
+LOG_MAX_BYTES = 5 * 1024 * 1024
 
 JSON_RUNTIMES = {"claude", "codex"}
 
@@ -76,6 +79,22 @@ def decide(ev: dict, errors: list = None):
     return policies.pre_tool(ev, errors if errors is not None else [])
 
 
+def _rotate_log(log) -> None:
+    # Keep the lock inode stable; OS locks are released even if a hook process dies.
+    fd = os.open(str(log.with_name(".hooks.rotate.lock")), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if log.stat().st_size > LOG_MAX_BYTES:
+            os.replace(str(log), str(log.with_name("hooks.jsonl.1")))
+    finally:
+        os.close(fd)
+
+
 def _record(ev: dict, verdict: str, errors=()) -> None:
     try:
         log = reins_home() / "logs" / "hooks.jsonl"
@@ -84,8 +103,16 @@ def _record(ev: dict, verdict: str, errors=()) -> None:
         if errors:
             rec["policyErrors"] = list(errors)
         rec.pop("prompt", None)  # never persist raw prompts
-        with log.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        try:
+            _rotate_log(log)
+        except OSError:
+            pass  # Rotation is best effort; still try to append this event.
+        data = (json.dumps(rec, ensure_ascii=False) + "\n").encode("utf-8")
+        fd = os.open(str(log), os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_BINARY", 0), 0o600)
+        try:
+            os.write(fd, data)
+        finally:
+            os.close(fd)
     except OSError:
         pass
 
