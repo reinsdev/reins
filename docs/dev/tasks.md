@@ -4,29 +4,48 @@
 
 契约层（T0）已经就位：所有模块的文件、函数签名、CLI 命令、gate 框架、hook 判定链都已存在，未实现的部分是桩代码（`raise NotImplementedError` 或返回「该能力不可用」）。**每个任务只把自己名下的桩填实**，不新增跨任务的公共文件。
 
-## 总览与开工顺序
+## 如何领取任务
 
-| 任务 | 内容 | 依赖 | 批次 |
+协调者只会告诉你两件事：**你的名字**和**任务编号**。其余全部在本仓库里：
+
+1. 读 [AGENTS.md](../../AGENTS.md)（规约）和 [architecture.md](architecture.md)（架构与契约）。
+2. 读本文你的任务一节：拥有哪些文件、要做什么、怎样算完成。
+3. 从 `feature/dev_0.1` 最新提交拉出 `task/T<n>-<名字>`，在单独的 git worktree 里开发。
+4. 按 AGENTS.md §6 交付：提交信息以名字开头（`<名字>: T<n>: <做了什么>`）；运行测试时加 `set -o pipefail`，Python 3.8 和 3.12 全部通过；推送分支到远端；交付说明写四项。
+
+任务之间「拥有的文件」互不重叠。发现需要改别人的文件、或契约不对，停下来写进交付说明，由协调者处理。
+
+## 总览
+
+| 任务 | 内容 | 依赖 | 状态 |
 | --- | --- | --- | --- |
-| T1 | markdown 解析 + 工件模板 | — | 第 1 批 |
-| T2 | 状态与生命周期命令 | — | 第 1 批 |
-| T6 | 护栏：hook 规则、放行授权、留痕、git hook | T2 的 meta / locate（先按契约写，联调在 T2 合入后） | 第 1 批 |
-| T8 | 总控细则 + 主链 skill + bugfix 变种 | T1 的模板 | 第 1 批 |
-| T9 | 4 个 agent + 评审报告模板 | T1 的模板 | 第 1 批 |
-| T3 | gate 0–4 | T1、T2 合入 | 第 2 批 |
-| T4 | gate 5、7、8、8.5、8.9 | T1、T2 合入 | 第 2 批 |
-| T5 | gate 6、6.5、6.7 + `init-config` | T1、T2 合入 | 第 2 批 |
-| T7 | 归档：`archive` + gate 9 | T1、T2 合入 | 第 2 批 |
-| T10 | 8 个横切 skill | T8 合入 | 第 3 批 |
-| T11 | 用户决策命令：uat / scope / deploy skip | T2、T6 合入 | 追加 |
+| T1 | markdown 解析 + 工件模板 | — | ✅ 已合入 |
+| T2 | 状态与生命周期命令 | — | ✅ 已合入 |
+| T3 | gate 0–4 | T1、T2 | ✅ 已合入 |
+| T4 | gate 5、7、8、8.5、8.9 | T1、T2 | ✅ 已合入 |
+| T5 | gate 6、6.5、6.7 + `init-config` | T1、T2 | ✅ 已合入 |
+| T6 | 护栏：hook 规则、放行授权、留痕、git hook | T2 | ✅ 已合入 |
+| T7 | 归档：`archive` + gate 9 | T1、T2 | ✅ 已合入 |
+| T8 | 总控细则 + 主链 skill + bugfix 变种 | T1 | ✅ 已合入；补充（接入 T11 命令）进行中 |
+| T9 | 4 个 agent + 评审报告填写说明 | T1 | ✅ 已合入 |
+| T10 | 8 个横切 skill | T8 | ✅ 已合入 |
+| T11 | 用户决策命令：uat / scope / deploy skip | T2、T6 | ✅ 已合入 |
+| T12 | 排查偶发的测试失败 | — | 📋 待领取 |
+| T13 | 端到端联调 + 更新 README 与验证手册 | T1–T11 | 📋 待领取 |
+| T14 | 多实例安全（CLI 状态层） | — | 📋 待领取 |
+| T15 | gate 6.7 质量检查的并发保护 | — | 📋 待领取（建议 John） |
 
-- **第 1 批 5 个任务可以同时开工**，彼此不改同一个文件。
-- **T1、T2 要最先合入**，第 2 批都依赖 `mdparse` 和 `meta`。T1 建议先交付模板和 `ALIASES`（半天量），再做解析函数，这样 T8、T9 能尽早对齐格式。
-- 第 2 批 4 个任务之间互不依赖，可以同时开。
-- 全部合入后由协调者做一次端到端联调：在示例 Java 项目里用 S 档和 M 档各走通一遍，并更新 README 和验证手册。
-- **延后事项**：Windows 真实环境验证（`install.ps1`、Git Bash 下的 hook、Codex 经 PowerShell 的 hook）放到联调之后单独做。
+T12–T15 可以同时开工，拥有的文件互不重叠。
 
-每个任务的交付标准都包含 AGENTS.md §6 的通用要求，下文不再重复：提交信息以 agent 名字开头（`<agent 名字>: T<n>: <做了什么>`，名字由协调者分配）、测试全过、rebase、交付说明四项。
+## 待办与延后
+
+| 事项 | 类别 | 负责 | 状态 |
+| --- | --- | --- | --- |
+| T9 本地分支 rebase 到最新 feature 分支，保留 implementation-generator「允许追加 implementation-log.md」的修正（26c14ed） | 小事项 | T9 | 待处理 |
+| 删除 T8 早期草稿 worktree `codex_dev/reins-T8-Codex-draft-3caa86c` 及分支 `task/T8-Codex-draft-3caa86c`（正式版已完整覆盖） | 小事项 | T8 或用户 | 待处理 |
+| Windows 真实环境验证：`install.ps1`、Git Bash 下的 hook、Codex 经 PowerShell 的 hook | 验证 | 待定 | 延后到 T13 之后 |
+| gate 1「复评结果与已确认档位不一致时给提示」（workflow §5.3） | 小功能 | T3 | 延后 |
+| gate 6 集成测试 `auto` 模式依赖 `.meta.json` 的 `qa_mode`，目前无命令写入 | 缺口 | 由 T13 联调时确认 | 延后 |
 
 ---
 
@@ -231,6 +250,112 @@
 - 模型经子 agent 或非用户消息无法签发 `uat` 授权（沿用 T6 的判定链）。
 - `scope set` 后 `advance` 按评估跳过或保留 Phase 2 / 3；非 bugfix 或非 Phase 1 拒绝。
 - `deploy skip` 后 Phase 8.5 为 skipped、当前 Phase 为 8.9，gate 8.5 放行。
+
+---
+
+## T12 排查偶发的测试失败
+
+**目标**：全量测试偶发失败、重跑又通过，要找到根因并修掉，否则 CI 会随机变红。
+
+**已知现象**
+- 第 1 次：Python 3.8，紧接在一轮 3.12 全量测试之后运行，`FAILED (errors=5, skipped=1)`，时间约 09-27 00:10（刚过零点）。
+- 第 2 次：Python 3.12，在临时 worktree 里运行，`FAILED (errors=1)`。
+- 之后单独重跑二十多次未复现，两次都没留下报错详情。当时有多个 agent 在不同 worktree 里同时跑测试。
+
+**拥有的文件**
+- `tests/` 下已有的测试文件（只为修复不稳定性而改）
+- `tools/flaky/`（新建：复现脚本，不进插件）
+
+**要做的**
+1. 写复现脚本：并发起多个测试进程、在较高负载下反复运行，保存每次失败的完整报错，把问题稳定复现出来。
+2. 逐个验证这些方向，不要只凭推测下结论：
+   - 有测试没把 `REINS_HOME` 指到临时目录，读写了真实的 `~/.reins`（日志、grants），或依赖 `HOME`、全局 git 配置；
+   - 与日期时间相关：如 `tests/test_lifecycle.py` 的 bugfix 名字含当天日期，测试和被测代码各取一次日期，跨零点会不一致；授权有效期、锁超时；
+   - `tests/test_meta.py` 的 spawn 多进程并发写入、`meta.lock` 的超时与过期清理；
+   - 真实 `git commit` 会触发 git hook（`test_githook.py`、`test_user_decisions.py` 等），hook 调用的 CLI 路径和环境变量是否受外部影响；
+   - 多个 worktree 同时跑测试时共用的固定路径或同名文件。
+3. 问题在测试本身时直接修；问题在产品代码时不要改，写清复现步骤交给协调者。
+
+**验收**
+- 交付说明写明根因：哪个测试、为什么失败。
+- 修复后用复现脚本并发 4 个进程、共 50 轮，Python 3.8 和 3.12 都零失败。
+
+---
+
+## T13 端到端联调 + 更新 README 与验证手册
+
+**目标**：T1–T11 都已合入，但还没有人把整条工件链从头走通。在真实的示例 Java 项目里完整走一遍，找出模块之间对不上的地方，并把文档更新到和代码一致。
+
+**拥有的文件**
+- `tools/e2e/`（新建：可重复运行的联调脚本，不进插件）
+- `docs/dev/e2e-report.md`（新建：联调报告）
+- `README.md`、`docs/verification.md`
+
+**要做的**
+1. 在临时目录建最小 Maven 示例项目：一个业务类、一个单元测试，配置 surefire 和 jacoco。机器上没有 JDK / Maven 时先停下告诉协调者，不要用手写的测试报告冒充真实运行结果。
+2. 不启动任何 AI 平台，用 CLI（`reinsdev-plugin/skills/spec-driven-dev/scripts/spec-driven`）模拟总控每一步。工件按 `templates/`、评审报告按 `templates/reports/` 填写：
+   - **流程 A（S 档 feature）**：`new` → 填 proposal → `complexity set S` → `advance`（应跳过 2、3、5、7）→ tasks → 按 TDD 节奏提交（RED 带 `TDD-Phase: RED`，GREEN 带 `Task-Id`）→ `tasks-sync` → `init-config --java` → `advance` 过 6 / 6.5 / 6.7 → code-review → `deploy skip` → 模拟用户输入「确认验收 <change>」→ `uat accept` → `archive`。
+   - **流程 B（M 档 feature，至少到 Phase 5）**：写 design、spec、spec-review，并演练一次 gate 拦截 → 模拟用户输入「确认放行 …」→ `waive`。
+   - **流程 C（bugfix）**：`new --mode bugfix` → `scope set` → 核对 Phase 2 / 3 的跳过。
+   - 模拟用户输入口令：把 UserPromptSubmit 形状的 JSON 经 stdin 交给 `spec-driven hook prompt-submit --runtime claude`，形状见 `tests/test_policies.py`。
+3. 每一步记录命令、退出码、关键输出、是否符合预期；整个过程做成 `tools/e2e/` 下可重复运行的脚本。
+4. 发现的问题写进 `docs/dev/e2e-report.md`：现象、复现命令、判断属于哪个任务。不要改其他任务的代码。
+5. 按实际行为更新 README.md 和 docs/verification.md，至少覆盖：`advance`、用户决策命令、放行与验收口令、git hook、评审报告格式、`init-config`；删掉过时写法。Windows 相关只标注「延后」。
+6. 协调者会转交 T14 给出的文档文字（「一个实例对应一个 git worktree」、授权不绑定实例），一并写进 README。
+
+**验收**
+- 流程 A、C 完整走通，流程 B 走到 Phase 5；联调脚本可重复运行。
+- 联调报告列出所有偏差及其归属；README 和验证手册与代码一致。
+
+---
+
+## T14 多实例安全（CLI 状态层）
+
+**目标**：用户会同时开多个 Claude / Codex / OpenCode 实例使用本插件。CLI 每次调用都是独立进程，进程内没有全局变量；但多个实例共用磁盘文件和同一个 git 工作区，会互相干扰。修掉下面 5 个问题，每个问题先写能复现的测试再修。
+
+**拥有的文件**
+- `commands/new.py`、`commands/status.py`、`commands/advance.py`、`commands/githook.py`
+- `meta.py`、`retro.py`、`hook.py`、`policies/gate_router.py`
+- `skills/waive/SKILL.md`
+- `tests/test_multi_instance.py`（新建；不改已有测试文件，T12 正在处理它们）
+
+**要做的**
+1. **【高】共用工作区时 `new` 切换分支会影响其他实例；按分支定位 change 会选错**
+   - `new`：工作区有未提交改动时拒绝切换分支，提示为这个 change 新建 git worktree 或加 `--no-branch`；工作区干净时行为不变。
+   - `gate_router`：同一项目有多个进行中的 change 时不按分支猜，直接不给提示；只有一个时行为不变。
+   - waive skill：所有 spec-driven 调用都带 `--change <change>`。
+   - `locate.resolve()` 规则不变，但 docstring 写明：多实例场景下调用方必须显式传 change。
+2. **【低～中】retrospective.md 不是原子写入，签名分开写**：正文和 `.retro.sha256` 都改为「唯一文件名的临时文件 + `os.replace`」；`retro.verify()` 签名对不上时短暂等待后重读一次再下结论。表格格式、签名算法、公开函数签名不变。
+3. **【低～中】git hook 写死了插件版本的绝对路径，插件升级后静默跳过**：hook 找不到 CLI 时输出醒目提示（这次没有执行 Reins 检查、怎么修复），仍不拦截提交；新增一个函数检查已安装 hook 的 CLI 路径是否仍有效且是当前 CLI，不是则重装（保留别人的 hook），在 `status` 和 `advance` 里调用，出错只提示、不影响命令结果。
+4. **【低】过期锁被清理后，原持有者释放时误删新持有者的锁**：`meta.lock()` 在锁文件里写唯一标识（pid + 随机值），释放前核对是自己的才删除，参照 `archive.archive_lock`。
+5. **【低】所有实例共用 `~/.reins/logs/hooks.jsonl`**：每条记录用一次 `os.write` 在 O_APPEND 下追加，不经缓冲；超过 5 MB 轮转为 `hooks.jsonl.1`（只留一份），轮转失败不影响 hook；日志仍不能包含用户原文。
+
+**验收**
+- 测试覆盖：工作区有改动时 `new` 拒绝切换；两个进行中的 change 时 gate_router 不给提示；多进程并发 `retro.add_todo` 后行数完整且签名通过；旧 hook 路径被自动刷新；过期锁被清理后原持有者不误删新锁；多进程并发写日志后每行都是合法 JSON；日志轮转。多进程测试用 spawn，`REINS_HOME` 指向临时目录。
+- README.md 和总控 SKILL.md 不在本任务范围。交付说明里给出要补的文字，由协调者转交 T13 / T8，至少包括：「一个实例对应一个 git worktree」的使用建议；放行授权不绑定具体实例（同一 change 的同一检查项，任何实例都可能消费用户签发的授权）。
+
+---
+
+## T15 gate 6.7 质量检查的并发保护
+
+**目标**：两个实例同时对同一项目执行 `advance` 经过 gate 6.7 时，`java.run_quality()` 会在同一目录里同时跑 Maven 和质量检查，互相覆盖 `target/` 和报告；gate 6.7 写 `static-analysis-report.md` 不是原子写入，code-reviewer 可能读到写了一半的报告。
+
+**拥有的文件**
+- `java.py`、`gates/g6_7.py`、`commands/init_config.py`
+- `tests/test_quality_concurrency.py`（新建；不改已有测试文件）
+
+**要做的**
+1. 在 `java.py` 加项目级质量检查锁（如 `.openspec/.quality.lock`，`O_CREAT|O_EXCL` 创建），包住 `run_quality()` 全程：
+   - 锁文件写唯一标识，释放前核对是自己的才删除（参照 `archive.archive_lock`）；
+   - 等锁有超时，默认取所有检查超时之和再加余量；超时给 BLOCK，原因写明「另一个实例正在跑质量检查」，不能当作通过；
+   - 过期判定要长于最长的检查时间，避免清理掉正在运行的检查的锁；
+   - `init-config` 也调用 `run_quality`，必须经过同一把锁。
+2. gate 6.7 写 `static-analysis-report.md` 改为「唯一文件名的临时文件 + `os.replace`」，格式严格按 architecture.md §4.4 不变。
+3. 保持现有行为：所有 Finding 仍然 `locked=True`；拿不准、执行失败或拿不到锁时一律拦截。需要新配置项时按 AGENTS.md §2 追加到 `config.DEFAULTS` 并在交付说明列出。
+
+**验收**
+- 测试覆盖：两个进程同时调用 `run_quality` 时串行执行（用会 sleep 的假命令证明不重叠）；等锁超时返回 BLOCK；持锁进程异常退出后锁按过期规则回收；报告写入过程中读取方读不到不完整的文件。
+- 不依赖真实 Maven，用配置里的假命令或小脚本代替。
 
 ---
 
