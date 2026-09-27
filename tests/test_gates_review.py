@@ -1,7 +1,6 @@
 """Tests for gate-5, gate-7, gate-8, gate-8.5, gate-8.9 (T4). Owner: T4."""
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,10 +9,10 @@ from unittest import mock
 # Ensure CLI lib is on path.
 from tests import CLI_LIB  # noqa: F401
 
-from spec_driven import gates, meta as meta_mod, retro
+from spec_driven import gates, meta as meta_mod
 from spec_driven.errors import BLOCK, OK, WARN
 from spec_driven.project import (
-    CODE_REVIEW, DEPLOY_REPORT, META, QA_REPORT, SPEC, SPEC_REVIEW, Project,
+    CODE_REVIEW, DEPLOY_REPORT, QA_REPORT, SPEC, SPEC_REVIEW, Project,
 )
 
 FIXTURES = Path(os.path.dirname(__file__)) / "fixtures" / "t4"
@@ -69,8 +68,8 @@ class Gate5Test(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _write(tmp, SPEC_REVIEW, _fixture("g5/pass_spec_review.md"))
             findings, code = _run("5", tmp)
-        # gate-5 only produces findings for its own checks; report's WARN lines are not
-        # surfaced as gate-5 findings.
+        # gate-5 only produces findings for its own checks; the report's WARN
+        # lines are not surfaced as gate-5 findings.
         self.assertEqual(code, OK)
         checks = [f.check for f in findings if f.level != "INFO"]
         self.assertNotIn("g5-generated-by", checks)
@@ -93,7 +92,6 @@ class Gate5Test(unittest.TestCase):
         self.assertEqual(code, BLOCK)
         checks = [f.check for f in findings]
         self.assertIn("g5-generated-by", checks)
-        # locked
         for f in findings:
             if f.check == "g5-generated-by":
                 self.assertTrue(f.locked)
@@ -149,6 +147,7 @@ class Gate5Test(unittest.TestCase):
 class Gate7Test(unittest.TestCase):
 
     def test_pass_all_sc_pass(self):
+        """SC titles with description suffix (e.g. '### SC-xxx-001: 标题') are correctly matched."""
         with tempfile.TemporaryDirectory() as tmp:
             _write(tmp, QA_REPORT, _fixture("g7/pass_qa_report.md"))
             _write(tmp, SPEC, _fixture("g7/pass_spec.md"))
@@ -156,6 +155,27 @@ class Gate7Test(unittest.TestCase):
         self.assertEqual(code, OK)
         checks = [f.check for f in findings if f.level != "INFO"]
         self.assertEqual(checks, [])
+
+    def test_fail_sc_id_extracted_from_full_title(self):
+        """Regression: title '### SC-batch-approve-001: 全部审批通过' must not be compared
+        verbatim against the qa-report — only the ID part should be extracted."""
+        spec = (
+            "# Capability: c (`c`)\n\n"
+            "## REQ-c-001: 需求\n\n"
+            "### SC-c-001: 场景标题带冒号和描述\n\n"
+            "WHEN x\nTHEN y\n"
+        )
+        qa = (
+            "<!-- generated-by: qa-evaluator-subagent -->\n\n"
+            "| SC | 结果 |\n| --- | --- |\n| SC-c-001 | PASS |\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            _write(tmp, SPEC, spec)
+            _write(tmp, QA_REPORT, qa)
+            findings, code = _run("7", tmp)
+        self.assertEqual(code, OK)
+        checks = [f.check for f in findings if f.level == "BLOCK"]
+        self.assertNotIn("g7-sc-pass", checks)
 
     def test_fail_missing_qa_report(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -222,9 +242,6 @@ class Gate7Test(unittest.TestCase):
 
 class Gate8Test(unittest.TestCase):
 
-    def _todos_for(self, warn_text):
-        return [warn_text[:40]]
-
     def test_pass_no_blocks_warns_in_todos(self):
         warn_text = "naming-convention — UserService.java 方法命名不规范 → 改为驼峰命名  #aa112233"
         with tempfile.TemporaryDirectory() as tmp:
@@ -243,7 +260,6 @@ class Gate8Test(unittest.TestCase):
     def test_fail_has_block(self):
         with tempfile.TemporaryDirectory() as tmp:
             _write(tmp, CODE_REVIEW, _fixture("g8/fail_has_block_code_review.md"))
-            # Pretend WARN is in todos.
             with mock.patch("spec_driven.retro.todos", return_value=["缺少关键操作日志"]):
                 findings, code = _run("8", tmp)
         self.assertEqual(code, BLOCK)
@@ -316,14 +332,67 @@ class Gate85Test(unittest.TestCase):
         checks = [f.check for f in findings]
         self.assertIn("g8_5-deploy-report", checks)
 
-    def test_pass_waiver_recorded(self):
-        """If user skipped deployment, a waiver in retrospective means pass."""
+    def test_fail_conclusion_not_passed_chinese(self):
+        """'未通过' contains '通过' but must NOT be treated as passed (substring trap)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _write(tmp, DEPLOY_REPORT, _fixture("g8_5/fail_not_passed_zh.md"))
+            findings, code = _run("8.5", tmp)
+        self.assertEqual(code, BLOCK)
+        checks = [f.check for f in findings]
+        self.assertIn("g8_5-deploy-report", checks)
+
+    def test_fail_conclusion_not_passed_english(self):
+        """'not passed' contains 'passed' but must NOT be treated as passed (substring trap)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _write(tmp, DEPLOY_REPORT, _fixture("g8_5/fail_not_passed_en.md"))
+            findings, code = _run("8.5", tmp)
+        self.assertEqual(code, BLOCK)
+        checks = [f.check for f in findings]
+        self.assertIn("g8_5-deploy-report", checks)
+
+    def test_fail_conclusion_explicit_failed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write(tmp, DEPLOY_REPORT, _fixture("g8_5/fail_explicit_failed.md"))
+            findings, code = _run("8.5", tmp)
+        self.assertEqual(code, BLOCK)
+        checks = [f.check for f in findings]
+        self.assertIn("g8_5-deploy-report", checks)
+
+    def test_pass_waiver_matches_framework_fingerprint(self):
+        """The framework's fingerprint-based waiver mechanism marks the finding as WAIVED."""
         from spec_driven.retro import Waiver
+        # Compute the actual fingerprint the gate will produce for the missing-report finding.
+        f = gates.Finding(
+            level="BLOCK",
+            check="g8_5-deploy-report",
+            reason="deploy-report.md 不存在，部署验收未完成",
+        )
+        fp = gates.fingerprint("8.5", f)
         waiver = Waiver("2026-01-01 10:00", "8.5", "g8_5-deploy-report",
-                        "跳过部署", "无法本地部署", "alice", "aabbccdd")
+                        "跳过部署", "无法本地部署", "alice", fp)
         with tempfile.TemporaryDirectory() as tmp:
             findings, code = _run("8.5", tmp, waivers=[waiver])
         self.assertEqual(code, OK)
+        self.assertTrue(any(f.waived for f in findings))
+
+    def test_waiver_after_content_change_is_rejected(self):
+        """If the report now exists but fails, the old 'no-report' waiver must not match."""
+        from spec_driven.retro import Waiver
+        f = gates.Finding(
+            level="BLOCK",
+            check="g8_5-deploy-report",
+            reason="deploy-report.md 不存在，部署验收未完成",
+        )
+        fp = gates.fingerprint("8.5", f)
+        old_waiver = Waiver("2026-01-01 10:00", "8.5", "g8_5-deploy-report",
+                            "跳过部署", "旧理由", "alice", fp)
+        with tempfile.TemporaryDirectory() as tmp:
+            # Now a report exists but says "failed" — different content, different fingerprint.
+            _write(tmp, DEPLOY_REPORT, _fixture("g8_5/fail_explicit_failed.md"))
+            findings, code = _run("8.5", tmp, waivers=[old_waiver])
+        # The finding for "not passed" has a different evidence/fingerprint than "no file",
+        # so the old waiver must not apply.
+        self.assertEqual(code, BLOCK)
 
     def test_skipped_phase_passes(self):
         with tempfile.TemporaryDirectory() as tmp:

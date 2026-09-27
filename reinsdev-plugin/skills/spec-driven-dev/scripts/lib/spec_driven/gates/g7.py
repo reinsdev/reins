@@ -21,11 +21,8 @@ _DEMOTION_PHRASES = [
     "直接根据代码验证",
 ]
 
-# Matches SC result lines in the report, e.g. in a table row or "SC-xxx-001: PASS".
-_SC_TABLE_RESULT = re.compile(
-    r"(?P<sc>SC-[a-z][a-z0-9-]*-(?:\d{3}|E\d+))\s*[|:]\s*(?P<result>PASS|FAIL|SKIP)",
-    re.IGNORECASE,
-)
+# Column names that hold the per-SC result in a qa-report table.
+_RESULT_COL_NAMES = {"结果", "Result", "Status", "状态"}
 
 
 def _read(change_dir, filename):
@@ -36,10 +33,33 @@ def _read(change_dir, filename):
 
 
 def _sc_results(text):
-    """Return {sc_id: result_upper} from all occurrences in the report."""
+    """Return {sc_id: result_upper} from the qa-report.
+
+    Primary path: mdparse.tables() looking for a table with an 'SC' column.
+    Fallback: regex scan using ID_PATTERNS["SC"] for inline "SC-xxx | PASS" forms.
+    """
     results = {}
-    for m in _SC_TABLE_RESULT.finditer(text):
-        results[m.group("sc")] = m.group("result").upper()
+    _sc_re = mdparse.id_re("SC")
+
+    for table in mdparse.tables(text):
+        if "SC" not in table.header:
+            continue
+        result_col = next((h for h in table.header if h in _RESULT_COL_NAMES), None)
+        if result_col is None:
+            continue
+        for row in table.rows:
+            m = _sc_re.search(row.get("SC", ""))
+            if m:
+                results[m.group(0)] = row.get(result_col, "").strip().upper()
+
+    if not results:
+        _fallback = re.compile(
+            r"(%s)\s*[|:]\s*(PASS|FAIL|SKIP)" % mdparse.ID_PATTERNS["SC"],
+            re.IGNORECASE,
+        )
+        for m in _fallback.finditer(text):
+            results[m.group(1)] = m.group(2).upper()
+
     return results
 
 
@@ -99,13 +119,20 @@ def check(ctx: GateContext) -> List[Finding]:
 
     spec_root = mdparse.parse(spec_text)
     sc_sections = mdparse.find_all(spec_root, mdparse.ID_PATTERNS["SC"])
-    sc_ids = [s.title.strip() for s in sc_sections]
+    # Extract the SC ID (e.g. "SC-policy-001") from the full title which may include
+    # a description suffix like ": 全部审批通过".
+    _sc_re = mdparse.id_re("SC")
+    sc_ids = []
+    for s in sc_sections:
+        m = _sc_re.search(s.title)
+        if m:
+            sc_ids.append(m.group(0))
 
     if not sc_ids:
         return findings
 
     results = _sc_results(text)
-    failed = [sc for sc in sc_ids if results.get(sc, "").upper() != "PASS"]
+    failed = [sc for sc in sc_ids if results.get(sc, "") != "PASS"]
     if failed:
         findings.append(Finding(
             level="BLOCK",
