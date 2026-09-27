@@ -112,3 +112,56 @@ class WorkspaceTest(ProjectTest):
         code, out, err = invoke('status', '--change', 'first-change', '--json')
         self.assertEqual(code, 0, err)
         self.assertEqual([c['change'] for c in json.loads(out)['changes']], ['first-change'])
+
+
+def hold_lock(directory, ready, release):
+    with meta.lock(Path(directory)):
+        ready.set()
+        if not release.wait(10):
+            raise RuntimeError('lock release was not signaled')
+
+
+class LockTest(unittest.TestCase):
+    def test_expired_holder_does_not_remove_successors_lock(self):
+        ctx = multiprocessing.get_context('spawn')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / meta.LOCK_FILE
+            first = meta.lock(Path(directory))
+            first.__enter__()
+            token = path.read_text(encoding='utf-8')
+            old = time.time() - meta.LOCK_STALE - 1
+            os.utime(str(path), (old, old))
+            ready, release = ctx.Event(), ctx.Event()
+            child = ctx.Process(target=hold_lock, args=(directory, ready, release))
+            child.start()
+            try:
+                self.assertTrue(ready.wait(10))
+                successor = path.read_text(encoding='utf-8')
+                self.assertNotEqual(token, successor)
+                first.__exit__(None, None, None)
+                self.assertTrue(path.exists(), 'the expired owner deleted the new lock')
+                self.assertEqual(path.read_text(encoding='utf-8'), successor)
+            finally:
+                first.__exit__(None, None, None)
+                release.set()
+                child.join(10)
+                if child.is_alive():
+                    child.terminate()
+                    child.join()
+            self.assertEqual(child.exitcode, 0)
+            self.assertFalse(path.exists())
+
+    def test_same_process_lock_replacement_has_unique_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / meta.LOCK_FILE
+            first = meta.lock(Path(directory))
+            first.__enter__()
+            original = path.read_text(encoding='utf-8')
+            old = time.time() - meta.LOCK_STALE - 1
+            os.utime(str(path), (old, old))
+            with meta.lock(Path(directory)):
+                successor = path.read_text(encoding='utf-8')
+                first.__exit__(None, None, None)
+                self.assertNotEqual(original, successor)
+                self.assertTrue(path.exists())
+            self.assertFalse(path.exists())
