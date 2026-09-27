@@ -26,6 +26,7 @@ TTL = 600  # seconds
 # The whole prompt must match (after trimming); anything else issues nothing.
 WAIVE_PHRASE = r"^确认放行\s+(?P<change>\S+)\s+(?P<gate>\S+)\s+(?P<check>\S+)$"
 DOWNGRADE_PHRASE = r"^确认降档\s+(?P<change>\S+)\s+(?P<tier>[SML])$"
+UAT_PHRASE = r"^确认验收\s+(?P<change>\S+)$"
 
 
 def grants_dir() -> Path:
@@ -33,8 +34,8 @@ def grants_dir() -> Path:
 
 
 def match_phrase(prompt: str) -> Optional[dict]:
-    """{"action": "waive", "change", "gate", "check"} or {"action": "downgrade", "change", "tier"},
-    or None when the prompt is not exactly a confirmation phrase."""
+    """{"action": "waive", "change", "gate", "check"}, {"action": "downgrade", "change", "tier"}
+    or {"action": "uat", "change"}; None when the prompt is not exactly a confirmation phrase."""
     text = (prompt or "").strip()
     m = re.match(WAIVE_PHRASE, text)
     if m:
@@ -42,7 +43,20 @@ def match_phrase(prompt: str) -> Optional[dict]:
     m = re.match(DOWNGRADE_PHRASE, text)
     if m:
         return dict(m.groupdict(), action="downgrade")
+    m = re.match(UAT_PHRASE, text)
+    if m:
+        return dict(m.groupdict(), action="uat")
     return None
+
+
+def uat_fingerprint(change_dir: Path) -> str:
+    """What a user acceptance is bound to: the content of spec.md and qa-report.md."""
+    digest = hashlib.sha1()
+    for name in ("spec.md", "qa-report.md"):
+        path = Path(change_dir) / name
+        data = path.read_bytes().replace(b"\r\n", b"\n") if path.is_file() else b""
+        digest.update(name.encode("ascii") + b"\0" + data + b"\0")
+    return digest.hexdigest()[:16]
 
 
 def _root(project_root: Path) -> str:

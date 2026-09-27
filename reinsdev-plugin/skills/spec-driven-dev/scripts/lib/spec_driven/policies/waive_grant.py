@@ -41,6 +41,16 @@ def _downgrade(project, m, change, tier) -> str:
             % (change, current, tier, grants.TTL // 60, tier))
 
 
+def _uat(project, change_dir, m, change) -> str:
+    if m.get("phase") != "8.9":
+        return "%s 当前在 Phase %s，用户验收只在 Phase 8.9 进行，未签发验收授权" % (change, m.get("phase"))
+    if m.get("uatAccepted"):
+        return "%s 已经验收过，无需再次确认" % change
+    grants.issue(project.root, change, "uat", "accept", grants.uat_fingerprint(change_dir))
+    return ("用户已确认 %s 验收通过（%d 分钟内有效，绑定当前 spec.md 与 qa-report.md）。执行 "
+            "spec-driven uat accept 记录验收。" % (change, grants.TTL // 60))
+
+
 def prompt(ev: dict) -> Optional[str]:
     phrase = grants.match_phrase(ev.get("prompt") or "")
     if not phrase:
@@ -58,6 +68,8 @@ def prompt(ev: dict) -> Optional[str]:
     try:
         if phrase["action"] == "waive":
             note = _waive(project, change_dir, m, change, phrase["gate"], phrase["check"])
+        elif phrase["action"] == "uat":
+            note = _uat(project, change_dir, m, change)
         else:
             note = _downgrade(project, m, change, phrase["tier"])
     except SystemExit as e:  # config / gate reported a user-facing error

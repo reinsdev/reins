@@ -4,6 +4,8 @@ Only the CLI writes this file (spec-gate blocks model edits). Tables:
   人工确认记录   written by `waive`         | 时间 | Gate | 检查项 | 拦截内容 | 理由 | 确认人 | 指纹 |
   档位变更记录   written by `complexity set` | 时间 | Phase | 变更 | 类型 | 理由 | 确认人 |
   待优化清单     written by `retro add`      | 时间 | 来源 | 内容 |
+  用户验收记录   written by `uat`            | 时间 | 结论 | 说明 | 确认人 |
+  部署验收记录   written by `deploy skip`    | 时间 | 结论 | 理由 | 确认人 |
 Appends create the file and the table on first use and never rewrite existing rows.
 
 The file is machine-written, so the reader here only understands what the writer
@@ -27,6 +29,8 @@ SIG_FILE = ".retro.sha256"
 WAIVERS = ("人工确认记录", ["时间", "Gate", "检查项", "拦截内容", "理由", "确认人", "指纹"])
 TIERS = ("档位变更记录", ["时间", "Phase", "变更", "类型", "理由", "确认人"])
 TODOS = ("待优化清单", ["时间", "来源", "内容"])
+UAT = ("用户验收记录", ["时间", "结论", "说明", "确认人"])
+DEPLOY = ("部署验收记录", ["时间", "结论", "理由", "确认人"])
 
 _PIPE = re.compile(r"(?<!\\)\|")
 
@@ -144,3 +148,11 @@ def todos(change_dir: Path) -> List[str]:
 def add_todo(change_dir: Path, source: str, text: str) -> None:
     """Append to 待优化清单; `source` e.g. "code-review WARN"."""
     _append(change_dir, TODOS, [now(), source, text])
+
+
+def append_uat(change_dir: Path, verdict: str, note: str, confirmer: str) -> None:
+    _append(change_dir, UAT, [now(), verdict, note, confirmer])
+
+
+def append_deploy(change_dir: Path, verdict: str, reason: str, confirmer: str) -> None:
+    _append(change_dir, DEPLOY, [now(), verdict, reason, confirmer])

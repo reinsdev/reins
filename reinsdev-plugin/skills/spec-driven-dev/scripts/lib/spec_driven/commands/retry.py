@@ -27,32 +27,46 @@ def _mark_revised(path, reason: str) -> None:
     path.write_bytes((note + path.read_text(encoding="utf-8")).encode("utf-8"))
 
 
-def run(a) -> int:
-    project = Project.here()
-    change, change_dir, m = locate.load(project, a.change)
-    if a.phase not in meta.PHASES or a.phase == "0":
+def check_rollback(m: dict, phase: str, reason: str) -> None:
+    """fail() unless rolling back from the current phase to `phase` is allowed."""
+    if phase not in meta.PHASES or phase == "0":
         fail("只能回退到 Phase %s" % " / ".join(meta.PHASES[1:]))
-    target, current = meta.PHASES.index(a.phase), meta.PHASES.index(m["phase"])
-    if target >= current:
+    if meta.PHASES.index(phase) >= meta.PHASES.index(m["phase"]):
         fail("当前在 Phase %s，只能回退到更早的 Phase" % m["phase"])
-    if not a.reason.strip():
+    if not (reason or "").strip():
         fail("--reason 不能为空")
+
+
+def rollback(change_dir, phase: str, reason: str) -> dict:
+    """Reopen `phase`, mark later started phases stale, withdraw acceptance; return the new meta."""
+    target = meta.PHASES.index(phase)
 
     def apply(md):
         status = md["phaseStatus"]
         for p in meta.PHASES[target + 1:]:
             if status.get(p) in ("passed", "in_progress", "blocked"):
                 status[p] = "stale"
-        status[a.phase] = "in_progress"
-        md["phase"] = a.phase
-        md["staleFrom"] = a.phase
+        status[phase] = "in_progress"
+        md["phase"] = phase
+        md["staleFrom"] = phase
         if target <= meta.PHASES.index("8.9"):
             md["uatAccepted"], md["uatAcceptedAt"] = False, None
 
     m = meta.update(change_dir, apply)
-    if a.phase in AUTHORED:
-        _mark_revised(change_dir / router.OUTPUT[a.phase], a.reason)
+    if phase in AUTHORED:
+        _mark_revised(change_dir / router.OUTPUT[phase], reason)
+    return m
+
+
+def report(phase: str, m: dict) -> None:
     stale = router.stale_phases(m)
-    print("已回退到 Phase %s（%s）。%s" % (a.phase, router.ACTIONS[a.phase],
+    print("已回退到 Phase %s（%s）。%s" % (phase, router.ACTIONS[phase],
           "之后需要重新过门：Phase %s" % "、".join(stale) if stale else ""))
+
+
+def run(a) -> int:
+    project = Project.here()
+    change, change_dir, m = locate.load(project, a.change)
+    check_rollback(m, a.phase, a.reason)
+    report(a.phase, rollback(change_dir, a.phase, a.reason))
     return OK
