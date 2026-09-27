@@ -1,0 +1,600 @@
+[
+  {
+    "gate": "0",
+    "check": "java-project",
+    "removeBuild": true
+  },
+  {
+    "gate": "0",
+    "check": "change-name",
+    "change": "Bad_name"
+  },
+  {
+    "gate": "0",
+    "check": "change-artifacts",
+    "remove": [
+      "proposal.md"
+    ]
+  },
+  {
+    "gate": "0",
+    "check": "change-mode",
+    "meta": {
+      "mode": "unknown"
+    }
+  },
+  {
+    "gate": "1",
+    "check": "proposal-readable",
+    "remove": [
+      "proposal.md"
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "user-stories",
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "- US1：作为审批人，我希望批量审批，以便减少重复操作。",
+        "value": ""
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "story-ac",
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "| AC-1 | US1 |",
+        "value": "| AC-1 | US2 |"
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "out-of-scope",
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "不增加撤销审批能力。",
+        "value": ""
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "ambiguities-resolved",
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "| 用户 | ✅ |",
+        "value": "| 用户 | 未答 |"
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "business-source",
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "| 用户 | ✅ |",
+        "value": "| 模型 | ✅ |"
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "field-mapping",
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "本次无字段映射",
+        "value": "| 源字段 | 目标字段 | 转换规则或固定值 | 来源 |\n| --- | --- | --- | --- |\n| id | code | 原值 | 推断 |"
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "affected-modules",
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "| 审批 | src/main/java/Approval.java | 增加批量审批 |",
+        "value": ""
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "tier-confirmed",
+    "meta": {
+      "tierConfirmed": false
+    }
+  },
+  {
+    "gate": "1",
+    "check": "bugfix-analysis",
+    "bugfix": true,
+    "remove": [
+      "bugfix-analysis.md"
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "bugfix-reviewed",
+    "bugfix": true,
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "# Proposal:",
+        "value": "<!-- AUTO-DRAFTED by bugfix skill -->\n# Proposal:"
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "bugfix-ac-steps",
+    "bugfix": true,
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "提交两条记录，查询结果均为通过",
+        "value": ""
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "bugfix-regression",
+    "bugfix": true,
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "| AC-regression | US1 | 自动化回归且不退化已有测试 | 运行全量测试，全部通过 |\n",
+        "value": ""
+      }
+    ]
+  },
+  {
+    "gate": "2",
+    "check": "design-readable",
+    "remove": [
+      "design.md"
+    ]
+  },
+  {
+    "gate": "2",
+    "check": "alternatives-count",
+    "edits": [
+      {
+        "file": "design.md",
+        "old": "| 方案 C | 排队执行 | 高 | 平滑负载 | 延迟增大 | 8 小时 | 异步处理 |\n",
+        "value": ""
+      }
+    ]
+  },
+  {
+    "gate": "2",
+    "check": "alternatives-fields",
+    "edits": [
+      {
+        "file": "design.md",
+        "old": "| 4 小时 |",
+        "value": "|  |"
+      }
+    ]
+  },
+  {
+    "gate": "2",
+    "check": "recommendation",
+    "edits": [
+      {
+        "file": "design.md",
+        "old": "推荐理由：每次最多 20 条，复用现有逻辑可保持权限校验一致。",
+        "value": ""
+      }
+    ]
+  },
+  {
+    "gate": "2",
+    "check": "design-decision",
+    "meta": {
+      "designDecision": "方案 B"
+    }
+  },
+  {
+    "gate": "2",
+    "check": "impact-paths",
+    "edits": [
+      {
+        "file": "design.md",
+        "old": "src/main/java/Approval.java",
+        "value": "审批模块"
+      }
+    ]
+  },
+  {
+    "gate": "2",
+    "check": "stress-scenarios",
+    "edits": [
+      {
+        "file": "design.md",
+        "old": "限制并发并监测连接池",
+        "value": ""
+      }
+    ]
+  },
+  {
+    "gate": "2",
+    "check": "complexity-upgrade",
+    "meta": {
+      "complexity": "S"
+    },
+    "level": "WARN"
+  },
+  {
+    "gate": "3",
+    "check": "spec-readable",
+    "remove": [
+      "spec.md"
+    ]
+  },
+  {
+    "gate": "3",
+    "check": "ac-mapped",
+    "edits": [
+      {
+        "file": "spec.md",
+        "old": "关联 AC：AC-1",
+        "value": "关联 AC：AC-9"
+      }
+    ]
+  },
+  {
+    "gate": "3",
+    "check": "scenario-structure",
+    "edits": [
+      {
+        "file": "spec.md",
+        "old": "### SC-approval",
+        "value": "#### SC-approval"
+      }
+    ]
+  },
+  {
+    "gate": "3",
+    "check": "interface-contract",
+    "edits": [
+      {
+        "file": "spec.md",
+        "old": "每秒 10 次，超限 429",
+        "value": ""
+      }
+    ]
+  },
+  {
+    "gate": "3",
+    "check": "data-model",
+    "edits": [
+      {
+        "file": "spec.md",
+        "old": "db/U2.sql: 删除 status",
+        "value": ""
+      }
+    ]
+  },
+  {
+    "gate": "3",
+    "check": "complexity-upgrade",
+    "meta": {
+      "complexity": "S"
+    },
+    "level": "WARN"
+  },
+  {
+    "gate": "4",
+    "check": "tasks-readable",
+    "remove": [
+      "tasks.md"
+    ]
+  },
+  {
+    "gate": "4",
+    "check": "tasks-present",
+    "replace": {
+      "tasks.md": "# Tasks: batch-approve\n\n## Test\n"
+    }
+  },
+  {
+    "gate": "4",
+    "check": "task-identifiers",
+    "edits": [
+      {
+        "file": "tasks.md",
+        "old": "T2. 补充",
+        "value": "T1. 补充"
+      }
+    ]
+  },
+  {
+    "gate": "4",
+    "check": "task-estimate",
+    "edits": [
+      {
+        "file": "tasks.md",
+        "old": "预估：2 小时",
+        "value": "预估：2.5 小时"
+      }
+    ]
+  },
+  {
+    "gate": "4",
+    "check": "task-order",
+    "edits": [
+      {
+        "file": "tasks.md",
+        "old": "依赖：T2；",
+        "value": "依赖：T4；"
+      }
+    ]
+  },
+  {
+    "gate": "4",
+    "check": "task-link",
+    "edits": [
+      {
+        "file": "tasks.md",
+        "old": "关联：SC-approval-001；",
+        "value": "关联：SC-approval-999；"
+      }
+    ]
+  },
+  {
+    "gate": "4",
+    "check": "task-sources",
+    "remove": [
+      "spec.md"
+    ]
+  },
+  {
+    "gate": "4",
+    "check": "bugfix-regression",
+    "bugfix": true,
+    "edits": [
+      {
+        "file": "tasks.md",
+        "old": "T-regression:",
+        "value": "T6."
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "tier-confirmed",
+    "edits": [],
+    "meta": {
+      "tierConfirmed": "true"
+    }
+  },
+  {
+    "gate": "1",
+    "check": "business-source",
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "| 用户 | ✅ |",
+        "value": "| 用户确认 | ✅ |"
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "ambiguities-resolved",
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "| 20 条 |",
+        "value": "| <待回答> |"
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "field-mapping",
+    "edits": [
+      {
+        "file": "proposal.md",
+        "old": "减少重复操作",
+        "value": "完成文件格式转换"
+      }
+    ]
+  },
+  {
+    "gate": "1",
+    "check": "bugfix-analysis",
+    "edits": [
+      {
+        "file": "bugfix-analysis.md",
+        "old": "src/main/java/Approval.java 的循环提前返回，调用链为 Controller → Approval → Repository。",
+        "value": ""
+      }
+    ],
+    "bugfix": true
+  },
+  {
+    "gate": "2",
+    "check": "alternatives-fields",
+    "edits": [
+      {
+        "file": "design.md",
+        "old": "| 减少查询 |",
+        "value": "| <优点> |"
+      }
+    ]
+  },
+  {
+    "gate": "2",
+    "check": "design-decision",
+    "edits": [
+      {
+        "file": "design.md",
+        "old": "**最终选择**：方案 A",
+        "value": "**最终选择**：方案 A\n\n**最终选择**：方案 B"
+      }
+    ]
+  },
+  {
+    "gate": "2",
+    "check": "recommendation",
+    "edits": [
+      {
+        "file": "design.md",
+        "old": "推荐理由：每次最多 20 条，复用现有逻辑可保持权限校验一致。",
+        "value": "视情况而定。"
+      }
+    ]
+  },
+  {
+    "gate": "3",
+    "check": "scenario-structure",
+    "edits": [
+      {
+        "file": "spec.md",
+        "old": "THEN 两条记录均变成已通过",
+        "value": "THEN <待补充>"
+      }
+    ]
+  },
+  {
+    "gate": "3",
+    "check": "interface-contract",
+    "edits": [
+      {
+        "file": "spec.md",
+        "old": "| SC-approval-001 |",
+        "value": "| SC-approval-999 |"
+      }
+    ]
+  },
+  {
+    "gate": "3",
+    "check": "data-model",
+    "edits": [
+      {
+        "file": "spec.md",
+        "old": "### 迁移与回滚",
+        "value": "### 其它信息"
+      }
+    ]
+  },
+  {
+    "gate": "4",
+    "check": "task-estimate",
+    "edits": [
+      {
+        "file": "tasks.md",
+        "old": "预估：2 小时",
+        "value": "预估：0 小时"
+      }
+    ]
+  },
+  {
+    "gate": "4",
+    "check": "task-order",
+    "edits": [
+      {
+        "file": "tasks.md",
+        "old": "依赖：T2；",
+        "value": "依赖：T99；"
+      }
+    ]
+  },
+  {
+    "gate": "4",
+    "check": "task-order",
+    "edits": [
+      {
+        "file": "tasks.md",
+        "old": "## Domain Layer",
+        "value": "## Adapter Layer"
+      },
+      {
+        "file": "tasks.md",
+        "old": "## Application Layer",
+        "value": "## Domain Layer"
+      }
+    ]
+  },
+  {
+    "gate": "2",
+    "check": "alternatives-fields",
+    "edits": [
+      {
+        "file": "design.md",
+        "old": "| 4 小时 |",
+        "value": "| 未答 |"
+      }
+    ]
+  },
+  {
+    "gate": "2",
+    "check": "stress-scenarios",
+    "edits": [
+      {
+        "file": "design.md",
+        "old": "限制并发并监测连接池",
+        "value": "未答"
+      }
+    ]
+  },
+  {
+    "gate": "3",
+    "check": "scenario-structure",
+    "edits": [
+      {
+        "file": "spec.md",
+        "old": "THEN 两条记录均变成已通过",
+        "value": "THEN 未答"
+      }
+    ]
+  },
+  {
+    "gate": "3",
+    "check": "openapi-draft",
+    "config": {
+      "openapi": {
+        "enabled": true
+      }
+    },
+    "level": "WARN"
+  },
+  {
+    "gate": "3",
+    "check": "openapi-draft",
+    "config": {
+      "openapi": null
+    }
+  },
+  {
+    "gate": "3",
+    "check": "openapi-draft",
+    "config": {
+      "openapi": true
+    }
+  },
+  {
+    "gate": "3",
+    "check": "ac-mapped",
+    "bugfix": true,
+    "edits": [
+      {
+        "file": "spec.md",
+        "old": "关联 AC：AC-1、AC-regression",
+        "value": "关联 AC：AC-1\n\n```\n关联 AC：AC-regression\n```"
+      }
+    ]
+  }
+]
