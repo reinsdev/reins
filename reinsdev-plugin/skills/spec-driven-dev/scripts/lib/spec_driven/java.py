@@ -6,18 +6,26 @@ import re
 import shlex
 import subprocess
 import time
+import uuid
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from . import gitutil
+from .project import OPENSPEC
 
 
 CHECKS = ("archunit", "checkstyle", "spotbugs", "pmd", "sqlfluff")
 TEST_PATHS = ("**/target/surefire-reports/TEST-*.xml", "**/build/test-results/**/TEST-*.xml")
 COVERAGE_PATHS = ("**/target/site/jacoco*/jacoco.xml", "**/build/reports/jacoco/**/*.xml")
+QUALITY_LOCK = ".quality.lock"
+# Covers parsing and process start-up beyond the summed command timeouts.
+LOCK_MARGIN = 60
+LOCK_POLL = 0.2
+MAX_TIMEOUT = 600
 FREEZE_KEYS = ("archunit_freeze.store.default.allowStoreCreation", "archunit_freeze.store.default.allowStoreUpdate", "archunit_freeze.refreeze")
 
 
@@ -651,7 +659,98 @@ def _sql_resources(root, command, environment, timeout):
     return result
 
 
+def _budget(quality):
+    """Worst-case run time of one quality pass, as run_quality would enforce it."""
+    total = 0
+    for check in CHECKS:
+        entry = quality.get(check) if isinstance(quality, dict) else None
+        timeout = entry.get("timeout", 120) if isinstance(entry, dict) else 0
+        if not isinstance(timeout, bool) and isinstance(timeout, (int, float)) and 0 < timeout <= MAX_TIMEOUT:
+            total += timeout
+    return total + LOCK_MARGIN
+
+
+def _read_lock(path):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("token"), str) and isinstance(data.get("expires"), (int, float)):
+            return data
+    except (OSError, UnicodeError, ValueError):
+        pass
+    return None
+
+
+def _expired(path, data):
+    if data is not None:
+        return time.time() > data["expires"]
+    # Unreadable content may be a holder between create and write; only a lock
+    # older than any possible run is abandoned.
+    try:
+        return time.time() - path.stat().st_mtime > len(CHECKS) * MAX_TIMEOUT + LOCK_MARGIN
+    except OSError:
+        return False
+
+
+@contextmanager
+def quality_lock(root: Path, quality: Dict):
+    """Serialize quality runs per project; the holder's expiry outlasts its own checks."""
+    directory = Path(root) / OPENSPEC
+    path = directory / QUALITY_LOCK
+    budget = _budget(quality)
+    token = uuid.uuid4().hex
+    created = False
+    deadline = time.monotonic() + budget
+    while True:
+        if not directory.is_dir():
+            directory.mkdir(parents=True, exist_ok=True)
+            created = True
+        try:
+            descriptor = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            data = _read_lock(path)
+            if _expired(path, data):
+                # Re-read so a lock just re-taken by another waiter is not removed.
+                again = _read_lock(path)
+                if (again or {}).get("token") == (data or {}).get("token"):
+                    try:
+                        path.unlink()
+                    except FileNotFoundError:
+                        pass
+                    continue
+            if time.monotonic() >= deadline:
+                raise JavaError("另一个实例正在跑质量检查，等待 %s 秒后仍未结束，请稍后重试" % int(budget))
+            time.sleep(LOCK_POLL)
+            continue
+        except FileNotFoundError:
+            continue
+        try:
+            os.write(descriptor, json.dumps({"token": token, "pid": os.getpid(), "expires": time.time() + budget}).encode("utf-8"))
+        finally:
+            os.close(descriptor)
+        break
+    try:
+        yield
+    finally:
+        data = _read_lock(path)
+        if data is not None and data["token"] == token:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+        if created:
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+
+
 def run_quality(root: Path, quality: Dict, initialize: bool = False) -> Tuple[List[Violation], Dict[str, str]]:
+    """Execute all checks under the project quality lock; see _run_quality."""
+    with quality_lock(root, quality):
+        return _run_quality(root, quality, initialize)
+
+
+def _run_quality(root, quality, initialize):
     """Execute all checks and accept only fresh reports from successful checks."""
     violations = []
     errors = {}
@@ -667,7 +766,7 @@ def run_quality(root: Path, quality: Dict, initialize: bool = False) -> Tuple[Li
             if report_path is None or report_path == "-" and check != "sqlfluff":
                 raise JavaError("检查缺少有效报告路径")
             timeout = entry.get("timeout", 120)
-            if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 600:
+            if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= MAX_TIMEOUT:
                 raise JavaError("检查超时必须在 0 到 600 秒之间")
             environment = os.environ.copy()
             if check == "archunit":

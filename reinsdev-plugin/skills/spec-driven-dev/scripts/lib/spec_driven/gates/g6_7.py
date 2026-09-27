@@ -4,7 +4,9 @@ T5's explicit exception permits writing only static-analysis-report.md here.
 External quality commands own their configured tool reports.
 """
 
+import os
 import re
+import tempfile
 from typing import List
 
 from . import Finding, GateContext
@@ -36,6 +38,21 @@ def _report(change, new, existing, repaid, errors):
         lines += ["", "## 执行失败", "", "检查未完成时，计数只包含已验证的结果。"]
         lines += ["", *["- %s：%s" % (_cell(key), _cell(value)) for key, value in sorted(errors.items())]]
     return "\n".join(lines) + "\n"
+
+
+def _write(path, text):
+    """Replace atomically so code-reviewer never reads a half-written report."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=str(path.parent),
+                                         prefix=".static-analysis-", suffix=".tmp", delete=False) as handle:
+            temporary = handle.name
+            handle.write(text)
+        os.replace(temporary, str(path))
+        temporary = None
+    finally:
+        if temporary is not None and os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def check(ctx: GateContext) -> List[Finding]:
@@ -75,7 +92,7 @@ def check(ctx: GateContext) -> List[Finding]:
             findings.append(_block(name, "%s 有 %s 项新增违规" % (name, len(violations)),
                                    "\n".join(sorted(entry.fingerprint for entry in violations))))
     try:
-        (ctx.change_dir / STATIC_ANALYSIS).write_text(_report(ctx.change, new, existing, repaid, errors), encoding="utf-8")
+        _write(ctx.change_dir / STATIC_ANALYSIS, _report(ctx.change, new, existing, repaid, errors))
     except OSError as exc:
         findings.append(_block("quality-report", "无法写入静态分析报告：%s" % exc, "static-analysis-report-write"))
     return findings
