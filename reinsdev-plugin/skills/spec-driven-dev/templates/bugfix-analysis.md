@@ -1,4 +1,4 @@
-# Bugfix Analysis: <fix-date-slug>
+# Bugfix Analysis: <change-name>
 
 ## 基本信息
 

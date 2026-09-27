@@ -1,5 +1,5 @@
 <!-- AUTO-DRAFTED by bugfix skill; 用户必须 review 并补全后才能通过验证门 1 -->
-# Proposal: <fix-date-slug>
+# Proposal: <change-name>
 
 <本模板生成 change 目录中的 proposal.md。顶部草稿标志由用户 review 并补全后删除。>
 
