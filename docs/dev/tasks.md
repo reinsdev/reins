@@ -34,7 +34,7 @@
 | T13 | 端到端联调 + 更新 README 与验证手册 | T1–T11 | ✅ 已完成（Json）；文档与联调脚本已合入 |
 | T14 | 多实例安全（CLI 状态层，含追加：hook 放行 tasks-sync 的勾选） | — | 📋 待领取 |
 | T15 | gate 6.7 质量检查的并发保护 | — | ✅ 已合入（追加的「初始化报错可定位」转入 T20） |
-| T16 | Java 质量工具接入：ArchUnit 自动接入，Checkstyle / PMD / SpotBugs 可直接运行 | T5 | 📋 待领取（建议 Json） |
+| T16 | Java 质量工具接入：ArchUnit 自动接入，Checkstyle / PMD / SpotBugs 可直接运行，团队默认 .sqlfluff | T5 | ✅ 已合入（Json；Gradle 暂不支持，明确报错并给出手工步骤） |
 | T17 | S 档任务关联 AC（联调问题 E2E-01） | T1、T3、T8 | 📋 待领取（建议 Codex） |
 | T18 | 工件骨架生成 `scaffold` + 需求链追溯 `trace` | — | 📋 待领取 |
 | T19 | Phase 6 多实现者并行 `parallel` | T14 | 📋 待领取（优先级低，T14 合入后开工） |
@@ -502,6 +502,7 @@ T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告�
 
 **拥有的文件**
 - `java.py`、`gates/g6_7.py`、`commands/init_config.py`
+- `templates/quality/ReinsArchTest.java.template`（仅第 9 条）
 - `tests/test_sql_quality.py`（新建；不改已有测试文件）
 
 **要做的**
@@ -515,6 +516,7 @@ T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告�
 4. **一次调用**：所有语句写到一个临时目录，只调用一次 SQLFluff，再按文件把结果映射回原文件和行号；超时按整体计算。
 5. **告警级规则**：读取 SQLFluff 输出里的告警标记（`.sqlfluff` 的 `warnings` 配置，如 LT05 行长度），按 architecture.md §4.4 处理：列在「新增违规」表里、说明以 `[WARN] ` 开头，gate 6.7 给 WARN 不拦截。
 6. **按数量比较违规（所有检查通用）**：现在用指纹做字典去重，同一文件里同一规则、同样提示的违规只算一个，已有 1 处存量时新增 10 处也不会被拦截。改为按 architecture.md §4.4 的「按数量判定」：同一指纹当前数量多于基线时，多出的部分算新增。基线文件格式保持 `version: 1` 兼容（同一指纹多条记录即表示数量）。
+9. **【T16 发现】统一 ArchUnit 冻结属性名**：`java.FREEZE_KEYS` 传的是 `-Darchunit_freeze.*`，ArchUnit 实际识别的是 `archunit.freeze.*`，原本的冻结开关不生效。T16 在生成的 `ReinsArchTest` 模板里把前者映射到后者来兼容。改为直接传 ArchUnit 识别的属性名，并同步修改 `templates/quality/ReinsArchTest.java.template`（本条允许改这个模板），删掉映射；用 T16 的联调流程 `python3 tools/e2e/run.py --flows Q Q4` 复验基线生成和新增违规拦截。
 8. **【从 T15 转入，E2E-03】初始化与检查失败时报错要能定位**：`init-config --java` 和 gate 6.7 某项检查失败时，输出实际执行的完整命令、退出码、stderr 的最后若干行，并把完整输出写到 `.openspec/logs/quality-<检查>.log`（新建目录，路径写进报错）。联调中「插件无法解析」「没有匹配的 ArchUnit 测试」都只报了退出码 1，无法定位。本条会改到 `commands/init_config.py`，归本任务所有。
 7. 扫描范围补充：`src/main/resources` 以外、`.config.json` 里 `quality.sqlfluff.paths` 指定的目录（新增配置项，默认空，追加到 `config.DEFAULTS`）。写在 Java 注解里的 SQL（`@Select` 等）本任务不做，交付说明里标注。
 
