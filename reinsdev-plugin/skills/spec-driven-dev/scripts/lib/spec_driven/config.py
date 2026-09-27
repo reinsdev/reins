@@ -19,6 +19,9 @@ DEFAULTS = {
     "quality": {},
     # agents.<name>.model: model override for the retry (§5).
     "agents": {},
+    # openapi.enabled: api-design-rest also drafts openapi.draft.json; gate_on_draft: warn | block
+    # for gate 3's draft check (workflow §7). Read by gate 3 (T3).
+    "openapi": {"enabled": False, "gate_on_draft": "warn"},
 }
 
 LEVELS = ("block", "warn", "info", "off")
