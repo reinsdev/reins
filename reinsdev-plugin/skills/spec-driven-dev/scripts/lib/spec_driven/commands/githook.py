@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from .. import gitutil, locate, mdparse, retro
+from .. import gitutil, locate, mdparse, retro, taskstate
 from .. import project as P
 from ..errors import ERROR, OK, fail
 from ..meta import PHASES
@@ -126,7 +126,13 @@ def pre_commit(project: Project) -> List[str]:
         if PHASES.index(produced) >= PHASES.index(m["phase"]):
             continue
         before = _show(root, "HEAD:" + path)
-        if before is not None and before != _show(root, ":" + path):
+        staged = _show(root, ":" + path)
+        if before is not None and before != staged:
+            if name == P.TASKS and m["phase"] == "6":
+                done = taskstate.done_tasks(project, m)
+                # render changes only task checkboxes; compare the index, never the working file.
+                if staged == taskstate.render(before, done):
+                    continue
             problems.append("%s 属于 Phase %s，已冻结（当前 Phase %s）；要改请先回退：spec-driven retry %s --reason ..."
                             % (path, produced, m["phase"], produced))
     return problems

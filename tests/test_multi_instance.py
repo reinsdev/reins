@@ -390,3 +390,62 @@ class HookRefreshTest(ProjectTest):
         # Git's hook runner executes the installed shell script on every platform.
         self.git('commit', '-qm', 'commit without installed plugin')
         self.assertEqual(self.git('log', '-1', '--format=%s'), 'commit without installed plugin')
+
+
+class TasksSyncCommitTest(ProjectTest):
+    TASKS = '# Tasks\n\n- [ ] T1 Implement first task\n- [ ] T2 Implement second task\n'
+
+    def setUp(self):
+        super().setUp()
+        self.directory = self.change(phase='4')
+        self.tasks = self.directory / 'tasks.md'
+        self.tasks.write_text(self.TASKS, encoding='utf-8')
+        self.git('add', '.openspec')
+        self.git('commit', '-qm', 'tasks approved')
+        meta.update(self.directory, lambda data: data.update(phase='6'))
+        (self.root / 'implementation.txt').write_text('first task', encoding='utf-8')
+        self.git('add', 'implementation.txt')
+        self.git('commit', '-qm', 'first task complete\n\nTask-Id: T1')
+        githook.install(self.root)
+
+    def stage_tasks(self, text):
+        self.tasks.write_bytes(text.encode('utf-8'))
+        self.git('add', self.tasks.relative_to(self.root).as_posix())
+
+    def test_cli_tasks_sync_can_be_committed_in_phase_six(self):
+        code, out, err = invoke('tasks-sync', '--change', 'first-change', '--apply')
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.tasks.read_text(encoding='utf-8'), self.TASKS.replace('[ ] T1', '[x] T1'))
+        self.git('add', self.tasks.relative_to(self.root).as_posix())
+        self.assertEqual(githook.pre_commit(self.project), [])
+        self.git('commit', '-qm', 'sync completed task')
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'sync completed task')
+
+    def test_body_id_addition_deletion_and_false_checkmarks_stay_frozen(self):
+        synced = self.TASKS.replace('[ ] T1', '[x] T1')
+        changes = [synced.replace('first task', 'rewritten task'),
+                   synced.replace('T1', 'T3'),
+                   synced + '- [ ] T3 Extra task\n',
+                   synced.replace('- [ ] T2 Implement second task\n', ''),
+                   synced.replace('[ ] T2', '[x] T2')]
+        for text in changes:
+            with self.subTest(text=text):
+                self.stage_tasks(text)
+                self.assertIn('已冻结', '\n'.join(githook.pre_commit(self.project)))
+
+    def test_unstaged_legitimate_text_cannot_hide_staged_body_edit(self):
+        self.stage_tasks(self.TASKS.replace('first task', 'forged task'))
+        self.tasks.write_text(self.TASKS.replace('[ ] T1', '[x] T1'), encoding='utf-8')
+        self.assertIn('已冻结', '\n'.join(githook.pre_commit(self.project)))
+
+    def test_red_commit_does_not_authorize_checkbox(self):
+        (self.root / 'red-test.txt').write_text('failing test', encoding='utf-8')
+        self.git('add', 'red-test.txt')
+        self.git('commit', '-qm', 'failing second task\n\nTask-Id: T2\nTDD-Phase: RED')
+        self.stage_tasks(self.TASKS.replace('[ ] T2', '[x] T2'))
+        self.assertIn('已冻结', '\n'.join(githook.pre_commit(self.project)))
+
+    def test_later_phase_keeps_tasks_frozen(self):
+        meta.update(self.directory, lambda data: data.update(phase='7'))
+        self.stage_tasks(self.TASKS.replace('[ ] T1', '[x] T1'))
+        self.assertIn('已冻结', '\n'.join(githook.pre_commit(self.project)))
