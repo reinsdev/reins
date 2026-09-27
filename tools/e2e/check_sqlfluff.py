@@ -30,9 +30,11 @@ def main():
         try:
             violations = [v for f in json.loads(run.stdout) for v in f["violations"]]
             codes = {v["code"] for v in violations}
+            parsed = True
         except (ValueError, KeyError, TypeError):
             violations, codes = [], set()
-        matches = run.returncode == expected and required.issubset(codes)
+            parsed = False
+        matches = parsed and run.returncode == expected and required.issubset(codes)
         if name == "long-line-warning":
             matches = matches and all(v.get("warning") for v in violations if v["code"] == "LT05")
         records.append(dict(name=name, command=command, stdin=sql, exit_code=run.returncode,

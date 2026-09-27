@@ -47,4 +47,6 @@ SQLFluff 规则集：CP01 大写；CP02–CP04 consistent；AM04、RF02；LT05 �
 
 Gradle 自动接入暂不支持，明确返回 1 并给出手工步骤。条件模块、包名或 JUnit 不确定会停止，不猜测。多模块依赖需要项目本身能被 Maven 正常构建；已有团队命令不会被替换。预热失败恢复本次管理的 pom、配置及新测试，保留构建输出和日志供定位。
 
-完整 unittest 首轮：Python 3.8 与 3.12 各 370 项通过；插件 manifest 验证通过。T16 的 24 项测试覆盖插入、幂等、离线、失败恢复、确认参数、多模块及 SQL 配置。
+完整 unittest 首轮：Python 3.8 与 3.12 各 370 项通过。rebase 合入 T15 后，两版本各 381 项通过；插件 manifest 验证通过。T16 的 24 项测试覆盖插入、幂等、离线、失败恢复、确认参数、多模块及 SQL 配置。
+
+最终在包含 T15 的主干上执行 `python3 tools/e2e/run.py --flows Q Q4`，两套流程均退出 0，无诊断偏差；使用已预热缓存，全程 Maven 离线。证据目录 `reins-e2e-1j63h7j7`。SQLFluff 最终复验也全部符合预期，证据目录 `reins-sqlfluff-3hi_daza`。
