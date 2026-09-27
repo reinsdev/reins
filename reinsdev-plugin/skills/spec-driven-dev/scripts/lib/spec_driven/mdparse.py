@@ -60,13 +60,6 @@ ALIASES: Dict[str, List[str]] = {
     "deployment-errors": ["错误摘要与日志", "错误摘要", "Errors and Logs"],
     "manual-acceptance": ["用户人工验收结论", "人工验收", "Manual Acceptance"],
     "conclusion": ["结论", "Conclusion", "Result"],
-    # Review and static-analysis reports (docs/dev/architecture.md §4.2, §4.4).
-    "findings": ["问题清单", "Findings", "Issues"],
-    "sc-results": ["SC 验证结果", "SC Results", "Scenario Results"],
-    "bugfix-upgrade": ["bugfix 升级判定", "Bugfix Upgrade"],
-    "new-violations": ["新增违规", "New Violations"],
-    "baseline-violations": ["存量违规", "Baseline Violations"],
-    "repaid-violations": ["已偿还", "Repaid Violations"],
 }
 
 # ID grammar (§6.3). <cap> is the capability id: lowercase kebab-case.
