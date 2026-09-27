@@ -1,0 +1,1 @@
+[{"filepath":"src/main/resources/db/migration/V1__init.sql","violations":[{"start_line_no":2,"start_line_pos":1,"code":"CP01","description":"Keywords must be upper case."}]}]

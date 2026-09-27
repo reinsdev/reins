@@ -1,0 +1,1 @@
+<testsuite name="demo.ArchitectureTest" tests="1" failures="1" errors="0" skipped="0"><testcase classname="demo.ArchitectureTest" name="layers"><failure type="java.lang.AssertionError" message="Architecture violation (Service.java:12)">Architecture violation (Service.java:12)</failure></testcase></testsuite>

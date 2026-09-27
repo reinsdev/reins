@@ -1,0 +1,1 @@
+<testsuite name="demo.ServiceTest" tests="2" skipped="0" failures="1" errors="0"><testcase name="one"/><testcase name="two"><failure message="expected true">trace</failure></testcase></testsuite>

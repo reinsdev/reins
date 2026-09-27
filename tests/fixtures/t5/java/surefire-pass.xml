@@ -1,0 +1,1 @@
+<testsuite name="demo.ServiceTest" tests="3" failures="0" errors="0" skipped="1"><testcase name="one"/><testcase name="two"/><testcase name="skip"><skipped/></testcase></testsuite>

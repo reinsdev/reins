@@ -1,0 +1,66 @@
+[
+  {
+    "check": "test-files",
+    "mutation": "no_test_changes"
+  },
+  {
+    "check": "test-execution",
+    "mutation": "zero_tests"
+  },
+  {
+    "check": "test-execution",
+    "mutation": "failed_tests"
+  },
+  {
+    "check": "test-execution",
+    "mutation": "skipped_tests"
+  },
+  {
+    "check": "test-execution",
+    "mutation": "missing_report"
+  },
+  {
+    "check": "test-skip",
+    "mutation": "skip_command"
+  },
+  {
+    "check": "test-skip",
+    "mutation": "pom_skip"
+  },
+  {
+    "check": "implementation-log",
+    "mutation": "missing_log"
+  },
+  {
+    "check": "test-log",
+    "mutation": "compile_as_test"
+  },
+  {
+    "check": "build",
+    "mutation": "failed_build"
+  },
+  {
+    "check": "coverage",
+    "mutation": "uncovered"
+  },
+  {
+    "check": "coverage",
+    "mutation": "missing_coverage"
+  },
+  {
+    "check": "task-id",
+    "mutation": "missing_trailer"
+  },
+  {
+    "check": "red-before-green",
+    "mutation": "late_red"
+  },
+  {
+    "check": "scope",
+    "mutation": "outside_scope"
+  },
+  {
+    "check": "integration-tests",
+    "mutation": "missing_integration"
+  }
+]
