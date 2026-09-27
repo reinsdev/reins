@@ -206,4 +206,57 @@
 
 ## 别名索引
 
-（由 T1 填写：`ALIASES` 键 → 模板文件 → 标题）
+模板目录：`reinsdev-plugin/skills/spec-driven-dev/templates/`。`proposal.md` 用于 feature；`proposal-bugfix.md` 用于 bugfix，生成时仍写入 change 的 `proposal.md`。
+
+标题的编号、大小写和首尾空白由 `find()` 统一忽略。下表列出每个键的第一个变体，与模板标题完全一致；其它中英文写法见 `mdparse.ALIASES`。
+
+| ALIASES 键 | 模板文件 | 模板标题 |
+| --- | --- | --- |
+| user-stories | proposal.md、proposal-bugfix.md | 用户故事 |
+| acceptance-criteria | proposal.md、proposal-bugfix.md | 验收标准 AC |
+| out-of-scope | proposal.md、proposal-bugfix.md | Out of Scope |
+| ambiguities | proposal.md、proposal-bugfix.md | 歧义清单 |
+| dependencies | proposal.md、proposal-bugfix.md | 隐含依赖 |
+| field-mapping | proposal.md、proposal-bugfix.md | 5.1 字段映射确认表 |
+| non-functional | proposal.md、proposal-bugfix.md | 关键非功能性需求 |
+| affected-modules | proposal.md、proposal-bugfix.md | 影响的现有模块 |
+| basic-info | bugfix-analysis.md | 基本信息 |
+| evidence | bugfix-analysis.md | 现场证据 |
+| root-cause | bugfix-analysis.md | 根因分析 |
+| fix-plan | bugfix-analysis.md | 修复方案 |
+| change-points | bugfix-analysis.md | 修改点 |
+| impact | bugfix-analysis.md | 影响范围 |
+| complexity-assessment | bugfix-analysis.md | 复杂度判定 |
+| background | design.md | 背景与目标 |
+| current-system | design.md | 现有系统分析 |
+| alternatives | design.md | 方案对比 |
+| final-choice | design.md | 推荐方案与最终决策 |
+| detailed-design | design.md | 详细设计 |
+| risks | design.md | 风险与缓解 |
+| stress-test | design.md | 压力测试自检 |
+| implementation-plan | design.md | 实施计划 |
+| interface-contract | spec.md | 接口契约 |
+| data-model | spec.md | 数据模型 |
+| table-structure | spec.md | 表结构 |
+| indexes | spec.md | 索引 |
+| constraints | spec.md | 约束 |
+| migrations | spec.md | 迁移与回滚 |
+| foundation | tasks.md | Foundation(底层依赖,必须先做) |
+| domain-layer | tasks.md | Domain Layer |
+| application-layer | tasks.md | Application Layer |
+| adapter-layer | tasks.md | Adapter Layer |
+| test-layer | tasks.md | Test |
+| change-scope | implementation-log.md | 变更范围 |
+| red | implementation-log.md | RED：失败测试 |
+| green | implementation-log.md | GREEN：通过测试 |
+| refactor | implementation-log.md | REFACTOR：重构 |
+| build | implementation-log.md | 完整构建 |
+| coverage | implementation-log.md | 增量覆盖率 |
+| commits | implementation-log.md | 提交记录 |
+| deployment-info | deploy-report.md | 启动信息 |
+| startup-result | deploy-report.md | 启动结果 |
+| deployment-errors | deploy-report.md | 错误摘要与日志 |
+| manual-acceptance | deploy-report.md | 用户人工验收结论 |
+| conclusion | deploy-report.md | 结论 |
+
+REQ / SC、单任务日志等动态标题通过 `find_all()` 与 `ID_PATTERNS` 查找，不为每个编号新增别名。`ids()` 按契约只提取数字 AC；bugfix 的固定 `AC-regression` 保留在验收标准表的 `AC` 列，可经 `tables()` 读取。
