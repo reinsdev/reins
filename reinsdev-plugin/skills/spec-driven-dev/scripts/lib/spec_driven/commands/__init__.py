@@ -28,4 +28,5 @@ COMMANDS = {
     "uat": "T11",
     "scope": "T11",
     "deploy": "T11",
+    "quality": "T16",
 }
