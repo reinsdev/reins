@@ -23,3 +23,9 @@
 ```
 
 结束：gate 1 检查用户故事、AC、歧义来源、字段映射、影响模块与档位。返回 3 就回当前子流程补齐；需要业务答案仍交用户决定。通过后重读状态，proposal 冻结。
+
+bugfix 模式下，工件不存在时，先由总控生成骨架，再交子流程按骨架填写；文件已存在时不覆盖，直接在原文件上填写：
+
+```text
+<spec-driven-dev skill 目录>/scripts/spec-driven scaffold bugfix-analysis --change <change>
+```

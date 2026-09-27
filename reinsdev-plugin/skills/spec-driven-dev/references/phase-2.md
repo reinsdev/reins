@@ -20,3 +20,9 @@
 ```
 
 结束：按 gate 2 结果处理。方案涉及修改需求时经总控 retry 回 Phase 1，不让设计 skill 改冻结的 proposal。
+
+工件不存在时，先由总控生成骨架，再交子流程按骨架填写；文件已存在时不覆盖，直接在原文件上填写：
+
+```text
+<spec-driven-dev skill 目录>/scripts/spec-driven scaffold design --change <change>
+```

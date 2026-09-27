@@ -13,3 +13,9 @@ skill 按 templates/tasks.md 写 tasks.md。任务分层有序、每项不超过
 ```
 
 结束：总控按 gate 4 结果处理。通过后 tasks 范围冻结；进入 Phase 5 或按 CLI 给出的已记录跳过进入 Phase 6。
+
+工件不存在时，先由总控生成骨架，再交子流程按骨架填写；文件已存在时不覆盖，直接在原文件上填写：
+
+```text
+<spec-driven-dev skill 目录>/scripts/spec-driven scaffold tasks --change <change>
+```

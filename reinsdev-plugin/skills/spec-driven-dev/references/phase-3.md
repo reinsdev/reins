@@ -15,3 +15,9 @@
 ```
 
 复评升档先询问用户，确认后才对复评命令加 --apply。结束时按 gate 3 的真实结果返回主循环；通过后 spec 冻结。
+
+工件不存在时，先由总控生成骨架，再交子流程按骨架填写；文件已存在时不覆盖，直接在原文件上填写：
+
+```text
+<spec-driven-dev skill 目录>/scripts/spec-driven scaffold spec --change <change>
+```

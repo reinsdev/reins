@@ -21,3 +21,9 @@
 启动失败必须保留 failed 和错误日志，回 Phase 6 修复、重过受影响的门，再部署。即使时间紧张或用户提出改成 skip，也不能把一次已失败的启动当作未选择部署。
 
 结束：选 y 时，gate 8.5 放行后经 advance 进入用户验收；选 n / skip 时按上述命令结果进入 Phase 8.9。人工反馈发现本次功能问题时回来源 Phase；已归档后发现问题则开启新的 bugfix。
+
+用户选 y 时，工件不存在时，先由总控生成骨架，再交子流程按骨架填写；文件已存在时不覆盖，直接在原文件上填写：
+
+```text
+<spec-driven-dev skill 目录>/scripts/spec-driven scaffold deploy-report --change <change>
+```
