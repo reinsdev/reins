@@ -31,9 +31,6 @@ DEFAULTS = {
     "openapi": {"enabled": False, "gate_on_draft": "warn"},
 }
 
-# Optional SQL directories supplement the standard Java resources tree.
-DEFAULTS["quality"].setdefault("sqlfluff", {})["paths"] = []
-
 LEVELS = ("block", "warn", "info", "off")
 
 

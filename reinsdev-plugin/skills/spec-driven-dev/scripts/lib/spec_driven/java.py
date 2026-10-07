@@ -634,16 +634,33 @@ def _mapper_sql(root, path, details=False):
         after = " " + suffix + " " if suffix else " "
         return before + value + after, [origins[0]] * len(before) + origins + [origins[-1]] * len(after)
 
+    def include_target(node, seen):
+        key = node["attrs"].get("refid", "")
+        if namespace and key.startswith(namespace + "."):
+            key = key[len(namespace) + 1:]
+        if key not in fragments or key in seen or node["parts"]:
+            raise JavaError("Mapper include 无法静态展开：%s" % key)
+        return fragments[key], seen | {key}
+
+    def select_keys(node, seen):
+        for part in node["parts"]:
+            if not isinstance(part, dict):
+                continue
+            if part["tag"] == "selectKey":
+                yield part
+            elif part["tag"] == "include":
+                target, next_seen = include_target(part, seen)
+                yield from select_keys(target, next_seen)
+            else:
+                yield from select_keys(part, seen)
+
     def expand(node, seen):
         tag = node["tag"]
         if tag == "include":
-            key = node["attrs"].get("refid", "")
-            if namespace and key.startswith(namespace + "."):
-                key = key[len(namespace) + 1:]
-            if key not in fragments or key in seen or node["parts"]:
-                raise JavaError("Mapper include 无法静态展开：%s" % key)
-            return parts(fragments[key], seen | {key})
-        if tag == "bind":
+            target, next_seen = include_target(node, seen)
+            return parts(target, next_seen)
+        # selectKey is a separate mapped statement, never part of its parent SQL.
+        if tag in ("bind", "selectKey"):
             return [("", [])]
         if tag == "choose":
             branches = []
@@ -676,9 +693,12 @@ def _mapper_sql(root, path, details=False):
 
     filename = path.relative_to(root).as_posix()
     statements = []
-    for index, node in enumerate(children):
-        if node["tag"] not in ("select", "insert", "update", "delete"):
-            continue
+    nodes = []
+    for node in children:
+        if node["tag"] in ("select", "insert", "update", "delete"):
+            nodes.append(node)
+            nodes.extend(select_keys(node, set()))
+    for index, node in enumerate(nodes):
         for value, origins in parts(node, set()):
             pieces = []
             mapped = []

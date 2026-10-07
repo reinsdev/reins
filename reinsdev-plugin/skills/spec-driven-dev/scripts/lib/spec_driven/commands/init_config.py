@@ -71,7 +71,7 @@ def run(a) -> int:
         if errors:
             raise ValueError("；".join("%s：%s" % item for item in sorted(errors.items())))
         new, unused, repaid = java.compare_quality(current, previous)
-        if exists and new:
+        if exists and any(not entry.warning for entry in new):
             raise ValueError("检测到新增违规，不能用重新初始化扩大已有基线")
         config["quality_baseline_initialized"] = True
         project.openspec.mkdir(parents=True, exist_ok=True)

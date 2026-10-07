@@ -256,6 +256,57 @@ AND id IN <foreach collection="ids" item="id" open="(" close=")" separator=",">#
             init_config.run(args)
         self.assertEqual(baseline.read_bytes(), before)
 
+    def test_reinitialization_allows_new_warnings_without_growing_baseline(self):
+        args = SimpleNamespace(java=True, dry_run=False)
+        project = Project(self.root)
+        with patch.object(Project, "here", return_value=project), patch.object(java, "run_quality", return_value=([], {})), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(init_config.run(args), 0)
+        before = project.quality_baseline.read_bytes()
+        warning = java.Violation("sqlfluff", "LT05", "q.sql", 1, "[WARN] Too long")
+        with patch.object(Project, "here", return_value=project), patch.object(java, "run_quality", return_value=([warning], {})), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(init_config.run(args), 0)
+        self.assertEqual(project.quality_baseline.read_bytes(), before)
+        blocking = java.Violation("sqlfluff", "CP01", "q.sql", 2, "Use upper case")
+        with patch.object(Project, "here", return_value=project), patch.object(java, "run_quality", return_value=([warning, blocking], {})), self.assertRaises(SystemExit):
+            init_config.run(args)
+        self.assertEqual(project.quality_baseline.read_bytes(), before)
+
+    def test_select_key_is_separate_sql_with_original_line_mapping(self):
+        path = self.mapper('''<insert id="add">
+<selectKey keyProperty="id" resultType="long" order="BEFORE">select next_id FROM sequences</selectKey>
+INSERT INTO users(id) VALUES (#{id})
+</insert>
+<update id="modify">
+UPDATE users SET id = #{id}
+<selectKey keyProperty="id" resultType="long" order="AFTER">select last_id FROM sequences</selectKey>
+</update>''')
+        sources = java._mapper_sql(self.root, path)
+        self.assertEqual({" ".join(sql.split()) for _, sql, _ in sources},
+                         {"INSERT INTO users(id) VALUES (?)", "UPDATE users SET id = ?",
+                          "select next_id FROM sequences", "select last_id FROM sequences"})
+        script = "import json,sys; from pathlib import Path; rows=[]\nfor p in sorted(Path(sys.argv[-1]).glob('*.sql')):\n sql=p.read_text(encoding='utf-8'); violations=[]\n for number,line in enumerate(sql.splitlines(),1):\n  if 'select ' in line: violations.append({'code':'CP01','description':'Use upper case','start_line_no':number,'start_line_pos':line.index('select ')+1})\n rows.append({'filepath':str(p),'violations':violations})\nprint(json.dumps(rows));sys.exit(1)"
+        values = java._sql_resources(self.root, [sys.executable, "-c", script], self.environment, 10)
+        self.assertEqual([(v.rule, v.line) for v in values], [("CP01", 3), ("CP01", 8)])
+        self.assertEqual(len(list((self.root / ".openspec").glob(".sqlfluff-*"))), 0)
+
+    def test_select_key_variants_are_scanned_once_independently_of_parent_variants(self):
+        self.mapper('''<insert id="add">
+<selectKey keyProperty="id" resultType="long" order="BEFORE">select <choose><when test="x">next_id</when><otherwise>last_id</otherwise></choose> FROM sequences</selectKey>
+INSERT INTO users(id) VALUES (<choose><when test="x">#{id}</when><otherwise>#{other}</otherwise></choose>)
+</insert>''')
+        values = self.scan([{"code": "CP01", "description": "Use upper case", "start_line_no": 1}])
+        self.assertEqual(len(values), 2)
+
+    def test_select_key_include_is_extracted_and_unknown_tags_still_block(self):
+        path = self.mapper('''<sql id="keys"><selectKey keyProperty="id" resultType="long">SELECT next_id FROM sequences</selectKey></sql>
+<insert id="add"><include refid="demo.keys"/>INSERT INTO users(id) VALUES (#{id})</insert>''')
+        self.assertEqual({" ".join(sql.split()) for _, sql, _ in java._mapper_sql(self.root, path)},
+                         {"SELECT next_id FROM sequences", "INSERT INTO users(id) VALUES (?)"})
+        for body in ('<insert id="add"><unknown>INSERT INTO users(id) VALUES (#{id})</unknown></insert>',
+                     '<insert id="add">INSERT INTO users(id) VALUES (#{id})<selectKey><unknown>SELECT id FROM users</unknown></selectKey></insert>'):
+            with self.subTest(body=body), self.assertRaises(java.JavaError):
+                java._mapper_sql(self.root, self.mapper(body))
+
     def test_command_failure_contains_full_command_exit_stderr_and_log(self):
         quality = self.quality()
         script = "import sys; print('full stdout'); [print('stderr-%s'%n,file=sys.stderr) for n in range(20)]; sys.exit(7)"
@@ -297,7 +348,16 @@ AND id IN <foreach collection="ids" item="id" open="(" close=")" separator=",">#
                 self.assertIn("archunit", java.run_quality(self.root, bad)[1])
 
     def test_sql_paths_default_is_empty(self):
-        self.assertEqual(config.DEFAULTS["quality"]["sqlfluff"]["paths"], [])
+        self.assertEqual(java.quality_defaults(self.root)["sqlfluff"]["paths"], [])
+
+    def test_missing_quality_in_config_gives_initialization_hint(self):
+        ctx = self.context([], self.quality())
+        self.write(".openspec/.config.json", json.dumps({"test": {"require_tests": True}}))
+        ctx.config = config.load(ctx.project)
+        findings = g6_7.check(ctx)
+        self.assertEqual([(f.check, f.level) for f in findings], [("quality-config", "BLOCK")])
+        self.assertIn("缺少 quality 配置，请由总控完成 Java 项目初始化", findings[0].reason)
+        self.assertFalse((self.root / ".openspec/logs").exists())
 
     @unittest.skipUnless(shutil.which("sqlfluff"), "未安装 SQLFluff，跳过真实集成测试")
     def test_real_sqlfluff_placeholder_and_warning(self):
