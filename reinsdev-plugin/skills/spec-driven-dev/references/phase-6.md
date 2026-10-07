@@ -23,3 +23,30 @@
 gate 6.5 检查提交推导的任务状态；延期必须有明确范围决定，不能把没完成的任务改成已完成。gate 6.7 对所有档位检查静态质量，报告由 gate 产出，模型不伪造；新增违规修复或由用户本人发起放行，不能扩充基线抹去违规。
 
 结束：全部出口门通过，用户已处理 WARN 后才经 advance 推进；advance 会再次检查 6 / 6.5 / 6.7。任务级 gate 通过不能提前进入 QA。测试为零、编译成功但未跑测试、覆盖率不足都不属于“完成”。
+
+## 可选：多实现者并行
+
+默认逐任务串行。只有 `.openspec/.config.json` 里 `parallel.enabled=true` 时才能并行。这个开关由用户决定，总控不替用户打开。
+
+1. 先预演。它只读，不建分支和 worktree：
+
+   ```text
+   <spec-driven-dev skill 目录>/scripts/spec-driven parallel plan --change <change>
+   ```
+
+   把波次、预计用时和结论原样告诉用户。预演报出依赖有环或缺范围时，不能并行，按提示处理。结论不是「建议」时，默认继续串行。
+2. 用户确认要并行后，为下一波建 worktree：
+
+   ```text
+   <spec-driven-dev skill 目录>/scripts/spec-driven parallel run --change <change> --json
+   ```
+
+   为输出里的每个 worktree 派一个 implementation-generator。每个只给一个任务编号、worktree 路径和范围。worker 只改自己范围内的文件，提交要带 Task-Id，不写 tasks.md。平台支持时可以同时派多个。
+3. 本波全部返回后，串行合回：
+
+   ```text
+   <spec-driven-dev skill 目录>/scripts/spec-driven parallel merge --change <change>
+   ```
+
+   合并会自动做 tasks-sync --apply 和 gate 6.5。退出码 3 表示合并冲突。这时已经中止合并，现场全部保留。把冲突文件和 worktree 路径告诉用户，在对应 worktree 里解决后，再运行 merge。不要删 worktree，不要强行覆盖。退出码 1 表示本波还没做完，或者有 worker 改了 tasks.md，按提示处理。
+4. 还有下一波时，回到第 2 步。全部波次合回后，按上文运行出口验证（gate 6 / 6.5 / 6.7）。
