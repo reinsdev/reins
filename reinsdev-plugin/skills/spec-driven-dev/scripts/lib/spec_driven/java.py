@@ -7,6 +7,8 @@ import shlex
 import subprocess
 import time
 import uuid
+import tempfile
+from collections import Counter, defaultdict
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
 from contextlib import contextmanager
@@ -26,7 +28,7 @@ QUALITY_LOCK = ".quality.lock"
 LOCK_MARGIN = 60
 LOCK_POLL = 0.2
 MAX_TIMEOUT = 600
-FREEZE_KEYS = ("archunit_freeze.store.default.allowStoreCreation", "archunit_freeze.store.default.allowStoreUpdate", "archunit_freeze.refreeze")
+FREEZE_KEYS = ("archunit.freeze.store.default.allowStoreCreation", "archunit.freeze.store.default.allowStoreUpdate", "archunit.freeze.refreeze")
 
 
 class JavaError(ValueError):
@@ -336,9 +338,14 @@ class Violation:
     message: str
 
     @property
+    def warning(self) -> bool:
+        return self.message.startswith("[WARN] ")
+
+    @property
     def fingerprint(self) -> str:
         """Keep source movement out of baseline identity."""
-        message = re.sub(r"(\.java):\d+(?::\d+)?", r"\1:<line>", self.message)
+        message = self.message[7:] if self.warning else self.message
+        message = re.sub(r"(\.java):\d+(?::\d+)?", r"\1:<line>", message)
         message = " ".join(message.split())
         value = json.dumps([self.check, self.file.replace("\\", "/"), self.rule, message], ensure_ascii=False, separators=(",", ":"))
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
@@ -371,7 +378,7 @@ def quality_defaults(root: Path, initialize: bool = False) -> Dict:
         }
         reports = {"archunit": "**/build/test-results/test/TEST-*Arch*.xml", "checkstyle": "**/build/reports/checkstyle/main.xml", "spotbugs": "**/build/reports/spotbugs/main.xml", "pmd": "**/build/reports/pmd/main.xml"}
     result = {check: {"command": commands[check], "report_path": reports[check]} for check in commands}
-    result["sqlfluff"] = {"command": ["sqlfluff", "lint", "--format", "json", "-"], "report_path": "-", "source": "java-resources"}
+    result["sqlfluff"] = {"command": ["sqlfluff", "lint", "--format", "json", "-"], "report_path": "-", "source": "java-resources", "paths": []}
     return result
 
 
@@ -430,7 +437,11 @@ def _parse_quality(root, check, path=None, stdout=None):
                 if item["code"] in ("PRS", "LXR", "TMP"):
                     raise JavaError("SQLFluff 无法解析或展开 SQL：%s" % item["description"])
                 number = _number(item.get("start_line_no", item.get("line_no")), "SQLFluff 行号")
-                result.append(Violation(check, item["code"], filename, number, item["description"]))
+                warning = item.get("warning", False)
+                if not isinstance(warning, bool):
+                    raise JavaError("SQLFluff 告警标记无效")
+                message = ("[WARN] " if warning else "") + item["description"]
+                result.append(Violation(check, item["code"], filename, number, message))
         return result
     document = _xml(path)
     expected = {"checkstyle": "checkstyle", "spotbugs": "BugCollection", "pmd": "pmd"}
@@ -518,7 +529,7 @@ def _freeze_command(command, initialize):
         key, separator, value = arg.partition("=")
         canonical = next((item for item in FREEZE_KEYS if key in
                           ("-D" + item, "-D" + item.replace(".", "_"),
-                           "-D" + item.replace("_", "."))), None)
+                           "-Darchunit_" + item[len("archunit."):])), None)
         if canonical:
             desired = "true" if initialize and not canonical.endswith("refreeze") else "false"
             if desired == "false" and (not separator or value != "false"):
@@ -528,14 +539,15 @@ def _freeze_command(command, initialize):
     return result
 
 
-def _mapper_sql(root, path):
-    """Expand static mapper statements in memory while keeping source line origins."""
+def _mapper_sql(root, path, details=False):
+    """Expand mapper variants with character origins, without evaluating OGNL."""
     parser = expat.ParserCreate()
     stack = []
     roots = []
 
     def start(name, attributes):
-        node = {"tag": name, "attrs": attributes, "parts": [], "line": parser.CurrentLineNumber}
+        node = {"tag": name, "attrs": attributes, "parts": [], "line": parser.CurrentLineNumber,
+                "column": parser.CurrentColumnNumber + 1}
         if stack:
             stack[-1]["parts"].append(node)
         else:
@@ -544,7 +556,17 @@ def _mapper_sql(root, path):
 
     def characters(value):
         if stack:
-            stack[-1]["parts"].append((value, parser.CurrentLineNumber))
+            number = parser.CurrentLineNumber
+            column = parser.CurrentColumnNumber + 1
+            origins = []
+            for char in value:
+                origins.append((number, column))
+                if char == "\n":
+                    number += 1
+                    column = 1
+                else:
+                    column += 1
+            stack[-1]["parts"].append((value, origins))
 
     def doctype(name, system_id, public_id, internal_subset):
         if internal_subset:
@@ -572,91 +594,302 @@ def _mapper_sql(root, path):
             fragments[name] = node
     namespace = mapper["attrs"].get("namespace", "")
 
-    def expand(node, seen):
-        result = []
+    def combine(left, right):
+        # Refuse an unbounded branch product rather than silently skip variants.
+        if len(left) * len(right) > 4096:
+            raise JavaError("Mapper 动态 SQL 变体超过 4096 条，请拆分语句")
+        return [(a + b, x + y) for a, x in left for b, y in right]
+
+    def parts(node, seen):
+        result = [("", [])]
         for part in node["parts"]:
-            if isinstance(part, tuple):
-                result.append(part)
-            elif part["tag"] == "include":
-                key = part["attrs"].get("refid", "")
-                if namespace and key.startswith(namespace + "."):
-                    key = key[len(namespace) + 1:]
-                if key not in fragments or key in seen or part["parts"]:
-                    raise JavaError("Mapper include 无法静态展开：%s" % key)
-                result.extend(expand(fragments[key], seen | {key}))
-            else:
-                raise JavaError("Mapper 动态 SQL 需要配置专用提取命令：%s" % part["tag"])
+            values = [part] if isinstance(part, tuple) else expand(part, seen)
+            result = combine(result, values)
         return result
 
+    def trim(value, origins, node):
+        tag = node["tag"]
+        attrs = node["attrs"]
+        options = {"where": ("WHERE", "", "AND |OR |AND\n|OR\n|AND\r|OR\r|AND\t|OR\t", ""),
+                   "set": ("SET", "", "", ",")}
+        prefix, suffix, pre, post = options.get(tag, (attrs.get("prefix", ""), attrs.get("suffix", ""),
+                                                     attrs.get("prefixOverrides", ""), attrs.get("suffixOverrides", "")))
+        left = len(value) - len(value.lstrip())
+        right = len(value.rstrip())
+        value, origins = value[left:right], origins[left:right]
+        for override in pre.split("|"):
+            if override and value.upper().startswith(override.upper()):
+                length = len(override.strip())
+                value, origins = value[length:], origins[length:]
+                break
+        for override in post.split("|"):
+            token = override.strip()
+            if token and value.upper().endswith(token.upper()):
+                value, origins = value[:-len(token)], origins[:-len(token)]
+                break
+        if not value.strip():
+            return "", []
+        # Generated tokens inherit the closest retained source token's line.
+        before = " " + prefix + " " if prefix else " "
+        after = " " + suffix + " " if suffix else " "
+        return before + value + after, [origins[0]] * len(before) + origins + [origins[-1]] * len(after)
+
+    def include_target(node, seen):
+        key = node["attrs"].get("refid", "")
+        if namespace and key.startswith(namespace + "."):
+            key = key[len(namespace) + 1:]
+        if key not in fragments or key in seen or node["parts"]:
+            raise JavaError("Mapper include 无法静态展开：%s" % key)
+        return fragments[key], seen | {key}
+
+    def select_keys(node, seen):
+        for part in node["parts"]:
+            if not isinstance(part, dict):
+                continue
+            if part["tag"] == "selectKey":
+                yield part
+            elif part["tag"] == "include":
+                target, next_seen = include_target(part, seen)
+                yield from select_keys(target, next_seen)
+            else:
+                yield from select_keys(part, seen)
+
+    def expand(node, seen):
+        tag = node["tag"]
+        if tag == "include":
+            target, next_seen = include_target(node, seen)
+            return parts(target, next_seen)
+        # selectKey is a separate mapped statement, never part of its parent SQL.
+        if tag in ("bind", "selectKey"):
+            return [("", [])]
+        if tag == "choose":
+            branches = []
+            for child in node["parts"]:
+                if isinstance(child, tuple):
+                    if child[0].strip():
+                        raise JavaError("Mapper choose 包含分支以外的 SQL")
+                elif child["tag"] in ("when", "otherwise"):
+                    branches.extend(parts(child, seen))
+                else:
+                    raise JavaError("Mapper choose 包含未知标签：%s" % child["tag"])
+            if not branches:
+                raise JavaError("Mapper choose 缺少分支")
+            return branches
+        if tag not in ("if", "when", "otherwise", "where", "set", "trim", "foreach"):
+            raise JavaError("Mapper 不支持的动态 SQL 标签：%s" % tag)
+        values = parts(node, seen)
+        if tag in ("where", "set", "trim"):
+            return [trim(value, origins, node) for value, origins in values]
+        if tag == "foreach":
+            before = node["attrs"].get("open", "")
+            after = node["attrs"].get("close", "")
+            # One iteration has no inter-item separator, matching MyBatis.
+            values = [(before + value + after,
+                       [(node["line"], node["column"])] * len(before) + origins +
+                       [(node["line"], node["column"])] * len(after))
+                      for value, origins in values if value.strip()]
+            return values or [("", [])]
+        return values
+
+    filename = path.relative_to(root).as_posix()
     statements = []
+    nodes = []
     for node in children:
-        if node["tag"] not in ("select", "insert", "update", "delete"):
-            continue
-        text = ""
-        origins = []
-        for value, number in expand(node, set()):
-            text += value
-            for char in value:
-                origins.append(number)
-                if char == "\n":
-                    number += 1
-        if "${" in text:
-            raise JavaError("Mapper 含无法确定的动态 SQL 取值")
-        # Bind values are literals; preserving whitespace keeps report locations useful.
-        pieces = []
-        mapped = []
-        offset = 0
-        for match in re.finditer(r"#\{[^{}]+\}", text):
-            pieces.append(text[offset:match.start()])
-            mapped.extend(origins[offset:match.start()])
-            pieces.append("NULL")
-            mapped.extend([origins[match.start()]] * 4)
-            offset = match.end()
-        pieces.append(text[offset:])
-        mapped.extend(origins[offset:])
-        sql = "".join(pieces)
-        if "#{" in sql or not sql.strip():
-            raise JavaError("Mapper SQL 内容为空或绑定参数无效")
-        line_map = []
-        index = 0
-        for line in sql.splitlines(keepends=True):
-            line_map.append(mapped[index])
-            index += len(line)
-        statements.append((path.relative_to(root).as_posix(), sql, line_map))
+        if node["tag"] in ("select", "insert", "update", "delete"):
+            nodes.append(node)
+            nodes.extend(select_keys(node, set()))
+    for index, node in enumerate(nodes):
+        for value, origins in parts(node, set()):
+            pieces = []
+            mapped = []
+            dollars = []
+            offset = 0
+            for match in re.finditer(r"([#$])\{[^{}]+\}", value):
+                pieces.append(value[offset:match.start()])
+                mapped.extend(origins[offset:match.start()])
+                replacement = "?" if match.group(1) == "#" else "reins_identifier"
+                if match.group(1) == "$":
+                    origin = origins[match.start()]
+                    dollars.append((Violation("sqlfluff", "mybatis-dollar-substitution", filename,
+                                              origin[0], "MyBatis $ 拼接存在 SQL 注入风险：%s" % match.group(0)), origin[1]))
+                pieces.append(replacement)
+                mapped.extend([origins[match.start()]] * len(replacement))
+                offset = match.end()
+            pieces.append(value[offset:])
+            mapped.extend(origins[offset:])
+            sql = "".join(pieces)
+            if "#{" in sql or "${" in sql or not sql.strip():
+                raise JavaError("Mapper SQL 内容为空或绑定参数无效")
+            lines = []
+            offset = 0
+            for line in sql.splitlines(keepends=True):
+                first = len(line) - len(line.lstrip())
+                lines.append(mapped[offset + min(first, len(line) - 1)][0])
+                offset += len(line)
+            source = (filename, sql, lines, index, dollars, mapped)
+            statements.append(source if details else source[:3])
     return statements
 
 
-def _sql_resources(root, command, environment, timeout):
-    sources = []
-    for directory in sorted(root.glob("**/src/main/resources")):
-        if any(part in (".git", "target", "build") for part in directory.relative_to(root).parts):
-            continue
-        for path in sorted(directory.rglob("*")):
-            if path.is_file() and path.suffix.lower() == ".sql":
-                sql = path.read_text(encoding="utf-8")
-                if sql.strip():
-                    sources.append((path.relative_to(root).as_posix(), sql, list(range(1, len(sql.splitlines()) + 1))))
-            elif path.is_file() and path.suffix.lower() == ".xml":
-                sources.extend(_mapper_sql(root, path))
-    result = []
-    deadline = time.monotonic() + timeout
-    for filename, sql, lines in sources:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise JavaError("SQL 检查超时")
-        process = subprocess.run(command, input=sql, cwd=str(root), env=environment,
+def _command_text(command):
+    return " ".join(shlex.quote(part) for part in command)
+
+
+def _output_text(value):
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""
+
+
+def _execution_detail(root, check, command, process, reason, code=None, stderr=None):
+    if code is None:
+        code = process.returncode if process is not None else "未启动"
+    if stderr is None:
+        stderr = _output_text(process.stderr) if process is not None else str(reason)
+    tail = "\n".join(stderr.splitlines()[-10:]) or "（空）"
+    return "%s；完整命令：%s；退出码：%s；stderr 最后 10 行：\n%s\n日志：%s" % (
+        reason, _command_text(command), code, tail, (Path(OPENSPEC) / "logs" / ("quality-%s.log" % check)).as_posix())
+
+
+def _execute_quality(root, check, command, environment, timeout):
+    """Keep complete output even when execution or report validation fails."""
+    stdout, stderr, code = "", "", "未启动"
+    process = None
+    failure = None
+    try:
+        process = subprocess.run(command, cwd=str(root), env=environment,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
-                                 errors="replace", timeout=remaining, check=False, shell=False)
-        if process.returncode not in (0, 1):
-            raise JavaError("SQLFluff 命令异常退出：%s" % process.returncode)
-        current = _parse_quality(root, "sqlfluff", stdout=process.stdout)
-        if process.returncode == 1 and not current:
-            raise JavaError("SQLFluff 命令失败且报告没有对应违规")
-        for item in current:
-            if item.line < 1 or item.line > len(lines):
-                raise JavaError("SQLFluff 行号超出提取的 SQL")
-            result.append(Violation(item.check, item.rule, filename, lines[item.line - 1], item.message))
-    return result
+                                 errors="replace", timeout=timeout, check=False, shell=False)
+        stdout, stderr, code = process.stdout, process.stderr, process.returncode
+    except subprocess.TimeoutExpired as exc:
+        stdout, stderr, code = _output_text(exc.stdout), _output_text(exc.stderr), "超时"
+        failure = JavaError("检查命令超时（%s 秒）" % timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        stderr = str(exc)
+        failure = exc
+    log = root / OPENSPEC / "logs" / ("quality-%s.log" % check)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("完整命令：%s\n退出码：%s\n\nstdout：\n%s\n\nstderr：\n%s" %
+                   (_command_text(command), code, stdout, stderr), encoding="utf-8")
+    if failure is not None:
+        raise JavaError(_execution_detail(root, check, command, None, failure, code, stderr))
+    return process
+
+
+def _sql_resources(root, command, environment, timeout, paths=None):
+    deadline = time.monotonic() + timeout
+    if paths is None:
+        paths = []
+    if not isinstance(paths, list) or any(not isinstance(path, str) or not path.strip() for path in paths):
+        raise JavaError("quality.sqlfluff.paths 必须是项目内目录列表")
+    directories = set(directory for directory in root.glob("**/src/main/resources")
+                      if not any(part in (".git", "target", "build") for part in directory.relative_to(root).parts))
+    for value in paths:
+        path = Path(value.replace("\\", "/"))
+        if path.is_absolute() or ".." in path.parts:
+            raise JavaError("SQL 扫描目录必须位于项目内：%s" % value)
+        directory = root / path
+        if not directory.is_dir():
+            raise JavaError("SQL 扫描目录不存在：%s" % value)
+        try:
+            directory.resolve().relative_to(root.resolve())
+        except ValueError:
+            raise JavaError("SQL 扫描目录越过项目边界：%s" % value)
+        directories.add(directory)
+    files = set(path for directory in directories for path in directory.rglob("*")
+                if path.is_file() and path.suffix.lower() in (".xml", ".sql"))
+    sources = []
+    for path in sorted(files):
+        if path.suffix.lower() == ".xml":
+            sources.extend(_mapper_sql(root, path, details=True))
+        else:
+            sql = path.read_text(encoding="utf-8")
+            if sql.strip():
+                origins = [(number, column) for number, line in enumerate(sql.splitlines(keepends=True), 1)
+                           for column in range(1, len(line) + 1)]
+                sources.append((path.relative_to(root).as_posix(), sql,
+                                list(range(1, len(sql.splitlines()) + 1)), 0, [], origins))
+    if not sources:
+        return []
+    directory = root / OPENSPEC
+    directory.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".sqlfluff-", dir=str(directory)) as temporary:
+        mappings = {}
+        for index, source in enumerate(sources):
+            path = Path(temporary) / ("statement-%06d.sql" % index)
+            path.write_text(source[1], encoding="utf-8")
+            mappings[path.relative_to(root).as_posix()] = source
+        # Replace the old stdin operand; custom extraction commands receive the
+        # directory as their last argument too. Keep all other options intact.
+        operand = Path(temporary).relative_to(root).as_posix()
+        actual = command[:-1] + [operand] if command[-1] == "-" else command + [operand]
+        process = None
+        try:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise JavaError("SQL 检查超时")
+            process = _execute_quality(root, "sqlfluff", actual, environment, remaining)
+            if process.returncode not in (0, 1):
+                raise JavaError("SQLFluff 命令异常退出")
+            data = json.loads(process.stdout)
+            if not isinstance(data, list):
+                raise JavaError("SQLFluff 报告必须是数组")
+            observed = set()
+            result = []
+            lint_errors = 0
+            counts = Counter()
+            for row in data:
+                if not isinstance(row, dict):
+                    raise JavaError("SQLFluff 文件记录无效")
+                filename = _file(root, row.get("filepath"))
+                if filename not in mappings or filename in observed:
+                    raise JavaError("SQLFluff 返回未知或重复的 SQL 文件：%s" % filename)
+                observed.add(filename)
+                source, sql, lines, statement, dollars, origins = mappings[filename]
+                current = _parse_quality(root, "sqlfluff", stdout=json.dumps([row]))
+                lint_errors += sum(not item.warning for item in current)
+                mapped = list(dollars)
+                offsets = []
+                offset = 0
+                sql_lines = sql.splitlines(keepends=True)
+                for line in sql_lines:
+                    offsets.append(offset)
+                    offset += len(line)
+                for item, raw in zip(current, row["violations"]):
+                    if item.line < 1 or item.line > len(lines):
+                        raise JavaError("SQLFluff 行号超出提取的 SQL")
+                    column = raw.get("start_line_pos", raw.get("line_pos"))
+                    number, origin_column = lines[item.line - 1], 0
+                    if column is not None:
+                        column = _number(column, "SQLFluff 列号")
+                        at_end = item.line == len(sql_lines) and column == len(sql_lines[-1]) + 1
+                        if not at_end and not 1 <= column <= len(sql_lines[item.line - 1]):
+                            raise JavaError("SQLFluff 列号超出提取的 SQL")
+                        position = offsets[item.line - 1] + column - 1
+                        number, origin_column = origins[min(position, len(origins) - 1)]
+                        if at_end:
+                            origin_column += 1
+                    mapped.append((Violation(item.check, item.rule, source, number, item.message), origin_column))
+                # Take the maximum count at each origin across variants of one
+                # statement. Separate statements retain their own occurrences.
+                seen = Counter()
+                for item, column in mapped:
+                    key = (source, statement, item.fingerprint, item.line, column)
+                    seen[key] += 1
+                    if seen[key] > counts[key]:
+                        result.append(item)
+                counts |= seen
+            if observed != set(mappings):
+                raise JavaError("SQLFluff 报告缺少已扫描的 SQL 文件")
+            if process.returncode == 1 and not lint_errors:
+                raise JavaError("SQLFluff 命令失败且报告没有对应违规")
+            if time.monotonic() > deadline:
+                raise JavaError("SQL 检查超时")
+            return result
+        except (JavaError, OSError, ValueError, subprocess.SubprocessError) as exc:
+            if process is None:
+                raise
+            raise JavaError(_execution_detail(root, "sqlfluff", actual, process, exc))
 
 
 def _budget(quality):
@@ -755,6 +988,8 @@ def _run_quality(root, quality, initialize):
     violations = []
     errors = {}
     for check in CHECKS:
+        command = None
+        process = None
         try:
             entry = quality.get(check) if isinstance(quality, dict) else None
             if not isinstance(entry, dict) or entry.get("enabled", True) is not True:
@@ -776,12 +1011,12 @@ def _run_quality(root, quality, initialize):
             if check == "sqlfluff" and entry.get("source") is not None:
                 if entry["source"] != "java-resources" or report_path != "-":
                     raise JavaError("SQL 输入模式无效，需要 java-resources 与标准输出报告")
-                violations.extend(_sql_resources(root, command, environment, timeout))
+                violations.extend(_sql_resources(root, command, environment, timeout, entry.get("paths", [])))
                 continue
             suffix = ".json" if check == "sqlfluff" else ".xml"
             before = {} if report_path == "-" else {path: _signature(path) for path in _paths(root, report_path, required=False, suffix=suffix)}
             started = time.time()
-            process = subprocess.run(command, cwd=str(root), env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=timeout, check=False, shell=False)
+            process = _execute_quality(root, check, command, environment, timeout)
             if process.returncode != 0 and not (check == "sqlfluff" and process.returncode == 1):
                 raise JavaError("检查命令未完成（退出 %s），XML 检查须配置为只生成报告且成功退出" % process.returncode)
             current = []
@@ -797,9 +1032,28 @@ def _run_quality(root, quality, initialize):
                 raise JavaError("检查命令失败且报告没有对应违规")
             violations.extend(current)
         except (JavaError, OSError, ValueError, subprocess.SubprocessError) as exc:
+            if process is not None:
+                exc = _execution_detail(root, check, command, process, exc)
             errors[check] = "%s 检查失败：%s" % (check, exc)
-    unique = {violation.fingerprint: violation for violation in violations}
-    return sorted(unique.values(), key=lambda item: (item.check, item.file, item.rule, item.line)), errors
+    return sorted(violations, key=lambda item: (item.check, item.file, item.rule, item.line)), errors
+
+
+def compare_quality(current, baseline, failed=()):
+    """Compare multiset debt, never treating a failed check as repaid."""
+    old = defaultdict(list)
+    for entry in baseline:
+        old[entry.fingerprint].append(entry)
+    counts = Counter()
+    new, existing = [], []
+    for entry in sorted(current, key=lambda item: (item.fingerprint, item.line)):
+        counts[entry.fingerprint] += 1
+        if counts[entry.fingerprint] <= len(old[entry.fingerprint]):
+            existing.append(entry)
+        else:
+            new.append(entry)
+    repaid = [entry for key, values in old.items() for entry in values[counts[key]:]
+              if entry.check not in failed]
+    return new, existing, repaid
 
 
 def load_baseline(path: Path) -> List[Violation]:
@@ -811,7 +1065,6 @@ def load_baseline(path: Path) -> List[Violation]:
     if not isinstance(value, dict) or set(value) != {"version", "violations"} or type(value["version"]) is not int or value["version"] != 1 or not isinstance(value["violations"], list):
         raise JavaError("质量基线格式或版本无效")
     result = []
-    seen = set()
     for row in value["violations"]:
         if not isinstance(row, dict) or set(row) != {"check", "rule", "file", "line", "message", "fingerprint"}:
             raise JavaError("质量基线违规记录不完整")
@@ -820,8 +1073,7 @@ def load_baseline(path: Path) -> List[Violation]:
         if not isinstance(row["line"], int) or isinstance(row["line"], bool) or row["line"] < 0 or "\\" in row["file"] or Path(row["file"]).is_absolute() or ".." in Path(row["file"]).parts:
             raise JavaError("质量基线位置无效")
         violation = Violation(row["check"], row["rule"], row["file"], row["line"], row["message"])
-        if row["fingerprint"] != violation.fingerprint or violation.fingerprint in seen:
-            raise JavaError("质量基线指纹不一致或重复")
-        seen.add(violation.fingerprint)
+        if row["fingerprint"] != violation.fingerprint:
+            raise JavaError("质量基线指纹不一致")
         result.append(violation)
     return result

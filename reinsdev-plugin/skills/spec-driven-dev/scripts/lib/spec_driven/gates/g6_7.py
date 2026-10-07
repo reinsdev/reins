@@ -27,7 +27,7 @@ def _cell(value):
 def _report(change, new, existing, repaid, errors):
     lines = ["<!-- generated-by: spec-driven gate-6.7 -->", "# Static Analysis: %s" % _cell(change),
              "", "## 结论", "", "| 新增 | 存量 | 已偿还 |", "| --- | --- | --- |",
-             "| %s | %s | %s |" % (len(new), len(existing), len(repaid))]
+             "| %s | %s | %s |" % (sum(not entry.warning for entry in new), len(existing), len(repaid))]
     for title, entries in (("新增违规", new), ("存量违规", existing), ("已偿还", repaid)):
         lines += ["", "## %s" % title, "", "| 检查 | 规则 | 位置 | 说明 |", "| --- | --- | --- | --- |"]
         for entry in sorted(entries, key=lambda item: (item.check, item.file, item.rule, item.fingerprint)):
@@ -79,18 +79,18 @@ def check(ctx: GateContext) -> List[Finding]:
         except (ValueError, OSError, TypeError, KeyError) as exc:
             errors["quality-execution"] = "静态检查未完成：%s" % exc
             findings.append(_block("quality-execution", errors["quality-execution"], "quality-execution:%s" % exc))
-    old = {entry.fingerprint: entry for entry in baseline}
-    present = {entry.fingerprint: entry for entry in current}
-    existing = [entry for key, entry in present.items() if key in old]
-    new = [entry for key, entry in present.items() if key not in old]
-    repaid = [entry for key, entry in old.items() if key not in present and entry.check not in errors]
+    new, existing, repaid = java.compare_quality(current, baseline, errors)
     if not baseline_valid or "quality-config" in errors or "quality-execution" in errors:
         repaid = []
     for name in java.CHECKS:
-        violations = [entry for entry in new if entry.check == name]
+        violations = [entry for entry in new if entry.check == name and not entry.warning]
         if violations:
             findings.append(_block(name, "%s 有 %s 项新增违规" % (name, len(violations)),
                                    "\n".join(sorted(entry.fingerprint for entry in violations))))
+        warnings = [entry for entry in new if entry.check == name and entry.warning]
+        if warnings:
+            findings.append(Finding("WARN", name, "%s 有 %s 项新增告警" % (name, len(warnings)),
+                                    evidence="\n".join(sorted(entry.fingerprint for entry in warnings)), locked=True))
     try:
         _write(ctx.change_dir / STATIC_ANALYSIS, _report(ctx.change, new, existing, repaid, errors))
     except OSError as exc:
