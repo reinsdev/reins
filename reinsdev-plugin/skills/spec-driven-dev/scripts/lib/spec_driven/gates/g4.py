@@ -6,8 +6,9 @@ Checks:
 - task-identifiers: require unique valid task IDs.
 - task-estimate: require a positive estimate no greater than two hours.
 - task-order: require layer order and dependencies on earlier tasks.
-- task-link: require existing SCs or bugfix change points.
+- task-link: require existing SCs, skipped-feature ACs or bugfix change points.
 - task-sources: require readable, populated link targets.
+- ac-covered: require every skipped-feature AC to be covered by a task.
 - bugfix-regression: require the dedicated automated regression task.
 """
 
@@ -17,7 +18,7 @@ from typing import List
 
 from . import Finding, GateContext
 from .. import mdparse
-from ..project import BUGFIX_ANALYSIS, SPEC, TASKS
+from ..project import BUGFIX_ANALYSIS, PROPOSAL, SPEC, TASKS
 
 
 def _sections(root):
@@ -94,8 +95,10 @@ def check(ctx: GateContext) -> List[Finding]:
     if not records:
         add("tasks-present", "tasks.md 至少须有一个任务", "no-tasks")
 
-    bugfix_links = ctx.meta.get("mode") == "bugfix" and bool((ctx.meta.get("skipped") or {}).get("3"))
-    source = BUGFIX_ANALYSIS if bugfix_links else SPEC
+    skipped_spec = bool((ctx.meta.get("skipped") or {}).get("3"))
+    bugfix_links = ctx.meta.get("mode") == "bugfix" and skipped_spec
+    ac_links = ctx.meta.get("mode") == "feature" and skipped_spec
+    source = BUGFIX_ANALYSIS if bugfix_links else PROPOSAL if ac_links else SPEC
     try:
         source_root = mdparse.parse((ctx.change_dir / source).read_text(encoding="utf-8"))
         if bugfix_links:
@@ -103,23 +106,48 @@ def check(ctx: GateContext) -> List[Finding]:
             targets = {r.get("修改点", "").strip() for table in mdparse.tables(section.body if section else "")
                        for r in table.rows if r.get("修改点", "").strip()
                        and "<" not in r.get("修改点", "")}
+        elif ac_links:
+            sections = [section for section in _sections(source_root)
+                        if mdparse.find(section, "acceptance-criteria") is section]
+            ac_ids = [r.get("AC", "").strip() for section in sections for table in mdparse.tables(section.text())
+                      for r in table.rows]
+            if len(sections) != 1:
+                add("task-sources", "proposal.md 验收标准须有且仅有一个章节",
+                    {"sections": [section.title for section in sections], "acs": ac_ids}, file=source)
+            targets = {identifier for identifier in ac_ids if mdparse.ids(identifier, "AC") == [identifier]}
+            if len(targets) != len(ac_ids):
+                add("task-sources", "proposal.md 验收标准须使用有效且唯一的 AC 编号", ac_ids, file=source)
         else:
             targets = {identifier for section in mdparse.find_all(source_root, mdparse.ID_PATTERNS["SC"])
                        for identifier in mdparse.ids(section.title, "SC") if section.level == 3}
         if not targets:
-            add("task-sources", "任务关联来源没有可用的 SC 或修改点", source, file=source)
+            reason = "proposal.md 验收标准没有可用的 AC" if ac_links else "任务关联来源没有可用的 SC 或修改点"
+            add("task-sources", reason, source, file=source)
     except (OSError, UnicodeError, ValueError) as exc:
         targets = set()
         add("task-sources", "无法读取或解析任务关联来源", [source, type(exc).__name__], file=source)
+    covered = set()
     for identifier, fields, text in records:
         value = fields.get("关联", "")
         if bugfix_links:
             links = [v.strip() for v in value.replace("、", ",").replace("，", ",").split(",") if v.strip()]
         else:
-            links = mdparse.ids(value, "SC")
-        if not links or not set(links).issubset(targets):
-            add("task-link", "每个任务须关联已定义的 SC；bugfix 跳过 spec 时关联修改点",
+            links = mdparse.ids(value, "AC" if ac_links else "SC")
+        valid_value = True
+        if ac_links:
+            residue = value
+            for link in sorted(links, key=len, reverse=True):
+                residue = residue.replace(link, "")
+            valid_value = not residue.strip(" ,，、\t")
+        covered.update(links)
+        if not links or not valid_value or not set(links).issubset(targets):
+            reason = ("每个任务须关联 proposal.md 验收标准中已定义的 AC" if ac_links
+                      else "每个任务须关联已定义的 SC；bugfix 跳过 spec 时关联修改点")
+            add("task-link", reason,
                 {"task": identifier or text, "links": value, "unknown": sorted(set(links) - targets)})
+    if ac_links and targets - covered:
+        add("ac-covered", "proposal.md 每条 AC 至少须被一个任务覆盖", sorted(targets - covered),
+            fix="为未覆盖的 AC 增加任务或补全任务关联")
     if ctx.meta.get("mode") == "bugfix" and not any(
             identifier == "T-regression" and "自动化回归测试" in text
             for identifier, fields, text in records):
