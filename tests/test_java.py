@@ -203,8 +203,8 @@ class JavaTests(unittest.TestCase):
         self.write("pom.xml", "<project/>")
         quality = java.quality_defaults(self.root)
         self.assertEqual(set(quality), set(CHECKS))
-        self.assertIn("-Darchunit_freeze.store.default.allowStoreCreation=false", quality["archunit"]["command"])
-        self.assertIn("-Darchunit_freeze.store.default.allowStoreUpdate=false", quality["archunit"]["command"])
+        self.assertIn("-Darchunit.freeze.store.default.allowStoreCreation=false", quality["archunit"]["command"])
+        self.assertIn("-Darchunit.freeze.store.default.allowStoreUpdate=false", quality["archunit"]["command"])
         (self.root / "pom.xml").unlink()
         self.write("build.gradle", "")
         self.assertEqual(set(java.quality_defaults(self.root)), set(CHECKS))
@@ -220,7 +220,7 @@ class JavaTests(unittest.TestCase):
         for initialize, value in ((False, "false"), (True, "true")):
             quality = self.quality()
             content = (FIXTURES / "archunit-pass.xml").read_text(encoding="utf-8")
-            script = "import os; from pathlib import Path; assert '-Darchunit_freeze.store.default.allowStoreCreation=%s' in os.environ['JAVA_TOOL_OPTIONS']; assert '-Darchunit_freeze.store.default.allowStoreUpdate=%s' in os.environ['JAVA_TOOL_OPTIONS']; p=Path('reports/archunit.xml'); p.parent.mkdir(parents=True,exist_ok=True); p.write_text(%r,encoding='utf-8')" % (value, value, content)
+            script = "import os; from pathlib import Path; assert '-Darchunit.freeze.store.default.allowStoreCreation=%s' in os.environ['JAVA_TOOL_OPTIONS']; assert '-Darchunit.freeze.store.default.allowStoreUpdate=%s' in os.environ['JAVA_TOOL_OPTIONS']; p=Path('reports/archunit.xml'); p.parent.mkdir(parents=True,exist_ok=True); p.write_text(%r,encoding='utf-8')" % (value, value, content)
             quality["archunit"]["command"] = [sys.executable, "-c", script]
             self.assertEqual(java.run_quality(self.root, quality, initialize=initialize)[1], {})
 
@@ -277,7 +277,7 @@ class JavaTests(unittest.TestCase):
         self.write("src/main/resources/db/migration/V1__table.sql", "select 1;\n")
         self.write("src/main/resources/mapper/Mapper.xml", '<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">\n<mapper namespace="demo.Mapper">\n<sql id="columns">id, name</sql>\n<select id="find">select <include refid="columns"/> from users where id = #{id}</select>\n</mapper>')
         quality = self.quality()
-        script = "import json,sys; sql=sys.stdin.read(); assert '#{' not in sql; assert '<include' not in sql; assert sql.strip() in ('select 1;', 'select id, name from users where id = NULL'); print(json.dumps([{'filepath':'stdin','violations':[{'code':'CP01','description':'Use upper case','start_line_no':1}]}]))"
+        script = "import json,sys; from pathlib import Path; paths=sorted(Path(sys.argv[-1]).glob('*.sql')); sqls=[p.read_text(encoding='utf-8') for p in paths]; assert {s.strip() for s in sqls} == {'select 1;', 'select id, name from users where id = ?'}; print(json.dumps([{'filepath':str(p),'violations':[{'code':'CP01','description':'Use upper case','start_line_no':1}]} for p in paths]))"
         quality["sqlfluff"] = {"command": [sys.executable, "-c", script], "report_path": "-", "source": "java-resources"}
         violations, errors = java.run_quality(self.root, quality)
         self.assertEqual(errors, {})
@@ -286,19 +286,25 @@ class JavaTests(unittest.TestCase):
 
     def test_sql_resources_dynamic_or_missing_include_fail_closed(self):
         quality = self.quality()
-        quality["sqlfluff"] = {"command": [sys.executable, "-c", "print('[]')"], "report_path": "-", "source": "java-resources"}
-        for body in ('<select id="x">select * from users <if test="id != null">where id=#{id}</if></select>', '<select id="x">select <include refid="missing"/> from users</select>', '<select id="x">select ${columns} from users</select>', '<sql id="cycle"><include refid="cycle"/></sql><select id="x"><include refid="cycle"/></select>'):
+        script = "import json,sys; from pathlib import Path; print(json.dumps([{'filepath':str(p),'violations':[]} for p in Path(sys.argv[-1]).glob('*.sql')]))"
+        quality["sqlfluff"] = {"command": [sys.executable, "-c", script], "report_path": "-", "source": "java-resources"}
+        for body in ('<select id="x">select * from users <if test="id != null">where id=#{id}</if></select>', '<select id="x">select ${columns} from users</select>'):
+            self.write("src/main/resources/mapper/Mapper.xml", '<mapper namespace="demo.Mapper">' + body + '</mapper>')
+            violations, errors = java.run_quality(self.root, quality)
+            self.assertEqual(errors, {})
+            self.assertEqual([v.rule for v in violations], ["mybatis-dollar-substitution"] if "${" in body else [])
+        for body in ('<select id="x">select <include refid="missing"/> from users</select>', '<sql id="cycle"><include refid="cycle"/></sql><select id="x"><include refid="cycle"/></select>'):
             self.write("src/main/resources/mapper/Mapper.xml", '<mapper namespace="demo.Mapper">' + body + '</mapper>')
             self.assertEqual(set(java.run_quality(self.root, quality)[1]), {"sqlfluff"})
 
     def test_archunit_uses_actual_system_property_names(self):
         self.write("pom.xml", "<project/>")
         command = java.quality_defaults(self.root)["archunit"]["command"]
-        self.assertIn("-Darchunit_freeze.store.default.allowStoreCreation=false", command)
-        self.assertIn("-Darchunit_freeze.store.default.allowStoreUpdate=false", command)
-        self.assertIn("-Darchunit_freeze.refreeze=false", command)
+        self.assertIn("-Darchunit.freeze.store.default.allowStoreCreation=false", command)
+        self.assertIn("-Darchunit.freeze.store.default.allowStoreUpdate=false", command)
+        self.assertIn("-Darchunit.freeze.refreeze=false", command)
         quality = self.quality()
-        quality["archunit"]["command"].append("-Darchunit_freeze.refreeze=true")
+        quality["archunit"]["command"].append("-Darchunit.freeze.refreeze=true")
         self.assertIn("archunit", java.run_quality(self.root, quality)[1])
 
     def test_reports_older_than_java_sources_fail_closed(self):
@@ -357,7 +363,8 @@ class JavaTests(unittest.TestCase):
     def test_sql_resources_map_multiline_violation_to_original_mapper_line(self):
         self.write("src/main/resources/mapper/Mapper.xml", '<mapper namespace="demo.Mapper">\n<select id="find">\nselect id\nfrom users\n</select>\n</mapper>')
         quality = self.quality()
-        quality["sqlfluff"] = {"command": [sys.executable, "-c", "print('[{\"filepath\":\"stdin\",\"violations\":[{\"code\":\"CP01\",\"description\":\"Upper case\",\"start_line_no\":3}]}]')"], "report_path": "-", "source": "java-resources"}
+        script = "import json,sys; from pathlib import Path; print(json.dumps([{'filepath':str(p),'violations':[{'code':'CP01','description':'Upper case','start_line_no':3}]} for p in Path(sys.argv[-1]).glob('*.sql')]))"
+        quality["sqlfluff"] = {"command": [sys.executable, "-c", script], "report_path": "-", "source": "java-resources"}
         violations, errors = java.run_quality(self.root, quality)
         self.assertEqual(errors, {})
         self.assertEqual([(v.file, v.line) for v in violations], [("src/main/resources/mapper/Mapper.xml", 4)])

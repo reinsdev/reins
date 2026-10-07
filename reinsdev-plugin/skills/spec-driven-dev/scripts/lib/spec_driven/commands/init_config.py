@@ -70,14 +70,14 @@ def run(a) -> int:
         current, errors = java.run_quality(project.root, merged, initialize=not exists)
         if errors:
             raise ValueError("；".join("%s：%s" % item for item in sorted(errors.items())))
-        known = {entry.fingerprint for entry in previous}
-        if exists and any(entry.fingerprint not in known for entry in current):
+        new, unused, repaid = java.compare_quality(current, previous)
+        if exists and new:
             raise ValueError("检测到新增违规，不能用重新初始化扩大已有基线")
         config["quality_baseline_initialized"] = True
         project.openspec.mkdir(parents=True, exist_ok=True)
         if not exists:
             baseline = {"version": 1, "violations": [entry.to_dict() for entry in
-                        sorted({entry.fingerprint: entry for entry in current}.values(), key=lambda item: item.fingerprint)]}
+                        sorted(current, key=lambda item: (item.fingerprint, item.line))]}
             _write(project.quality_baseline, baseline)
         try:
             _write(project.config_path, config)

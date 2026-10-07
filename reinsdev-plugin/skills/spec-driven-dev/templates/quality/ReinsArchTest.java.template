@@ -10,13 +10,6 @@ import <junit-import>;
 public class ReinsArchTest {
     @Test
     public void respectsLayerDependencies() {
-        // Bridge the existing CLI contract to ArchUnit's dotted system keys.
-        String[] keys = {"freeze.store.default.allowStoreCreation",
-            "freeze.store.default.allowStoreUpdate", "freeze.refreeze"};
-        for (String key : keys) {
-            System.setProperty("archunit." + key,
-                System.getProperty("archunit_" + key, "false"));
-        }
         System.setProperty("archunit.freeze.store.default.path", "<freeze-store>");
         FreezingArchRule.freeze(Architectures.layeredArchitecture()
             .consideringOnlyDependenciesInLayers()
