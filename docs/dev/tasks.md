@@ -35,10 +35,10 @@
 | T14 | 多实例安全（CLI 状态层，含追加：hook 放行 tasks-sync 的勾选） | — | ✅ 已合入（John Codex；合法勾选的放行由协调者扩展到 Phase 6 及之后） |
 | T15 | gate 6.7 质量检查的并发保护 | — | ✅ 已合入（追加的「初始化报错可定位」转入 T20） |
 | T16 | Java 质量工具接入：ArchUnit 自动接入，Checkstyle / PMD / SpotBugs 可直接运行，团队默认 .sqlfluff | T5 | ✅ 已合入（Json；Gradle 暂不支持，明确报错并给出手工步骤） |
-| T17 | S 档任务关联 AC（联调问题 E2E-01） | T1、T3、T8 | 📋 待领取（建议 Codex） |
+| T17 | S 档任务关联 AC（联调问题 E2E-01） | T1、T3、T8 | ✅ 已合入（Wilson CX；联调流程 A 已越过 gate 4） |
 | T18 | 工件骨架生成 `scaffold` + 需求链追溯 `trace` | — | 📋 待领取 |
 | T19 | Phase 6 多实现者并行 `parallel` | T14 | 📋 待领取（优先级低，T14 已合入，可以开工） |
-| T20 | SQL 检查完善（动态 SQL、占位符、`${}`、告警级规则、按数量比较违规、报错可定位） | T15 | 📋 待领取（建议 John，可以开工） |
+| T20 | SQL 检查完善（动态 SQL、占位符、`${}`、告警级规则、按数量比较违规、报错可定位） | T15 | ✅ 已合入（John CX；`<selectKey>` 单独检查；注解 SQL 未做；Q / Q4 联调受下方待办阻塞） |
 
 T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告的问题编号（E2E-01 至 E2E-04）见各任务说明。
 
@@ -52,6 +52,9 @@ T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告�
 | gate 1「复评结果与已确认档位不一致时给提示」（workflow §5.3） | 小功能 | T3 | 延后 |
 | gate 6 集成测试 `auto` 模式依赖 `.meta.json` 的 `qa_mode`，目前无命令写入 | 缺口 | 协调者 | 延后 |
 | E2E-04：`spec-driven-workflow.md` 与现状不一致（旧脚本名、`tasks-sync --write` 应为 `--apply`、验收写状态方式、feature 不分档必走 2/3） | 文档 | 协调者 | ✅ 已完成 |
+| 质量检查日志挡住 `new`：`.openspec/logs/`（T20）和 `.openspec/quality-setup-logs/`（T16）是未跟踪文件，`new` 检查工作区时连未跟踪文件一起算，跑过一次质量检查后就不能新建 change。需决定加进 `.gitignore`，还是让 `new` 忽略 `.openspec` 下的生成文件 | 缺口 | 协调者（涉及 T14、T16） | 待处理 |
+| 联调流程 Q / Q4 停在 `new`：T16 的联调脚本走到这一步时工作区还有未提交的改动，T14 合入后被拒；流程 A 离线时停在 Phase 6 的 `init-config --java`（Maven 质量插件无法解析） | 验证 | T16 联调脚本负责人 | 待处理 |
+| SQL 检查不覆盖 Java 注解里的 SQL（`@Select` 等） | 小功能 | 待定 | 延后 |
 
 ---
 
