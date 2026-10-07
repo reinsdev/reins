@@ -29,6 +29,9 @@ DEFAULTS = {
     # openapi.enabled: api-design-rest also drafts openapi.draft.json; gate_on_draft: warn | block
     # for gate 3's draft check (workflow §7). Read by gate 3 (T3).
     "openapi": {"enabled": False, "gate_on_draft": "warn"},
+    # parallel.enabled: allow `parallel run / merge` (Phase 6 multi-worker lane, workflow §10.3).
+    # `parallel plan` is read-only and works either way. Read by T19.
+    "parallel": {"enabled": False},
 }
 
 LEVELS = ("block", "warn", "info", "off")
