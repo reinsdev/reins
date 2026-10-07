@@ -503,7 +503,8 @@ T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告�
 **拥有的文件**
 - `java.py`、`gates/g6_7.py`、`commands/init_config.py`
 - `templates/quality/ReinsArchTest.java.template`（仅第 9 条）
-- `tests/test_sql_quality.py`（新建；不改已有测试文件）
+- `tests/test_sql_quality.py`（新建，T20 的新测试都放这里）
+- `tests/test_java.py`（仅第 10 条列出的测试）
 
 **要做的**
 1. **动态 SQL 标签**：`<if>`、`<where>`、`<set>`、`<trim>`、`<choose>`/`<when>`/`<otherwise>`、`<foreach>`、`<bind>` 目前会让整个检查报错。改为展开成可检查的静态 SQL：
@@ -519,6 +520,12 @@ T12、T14–T17 可以同时开工，拥有的文件互不重叠。联调报告�
 9. **【T16 发现】统一 ArchUnit 冻结属性名**：`java.FREEZE_KEYS` 传的是 `-Darchunit_freeze.*`，ArchUnit 实际识别的是 `archunit.freeze.*`，原本的冻结开关不生效。T16 在生成的 `ReinsArchTest` 模板里把前者映射到后者来兼容。改为直接传 ArchUnit 识别的属性名，并同步修改 `templates/quality/ReinsArchTest.java.template`（本条允许改这个模板），删掉映射；用 T16 的联调流程 `python3 tools/e2e/run.py --flows Q Q4` 复验基线生成和新增违规拦截。
 8. **【从 T15 转入，E2E-03】初始化与检查失败时报错要能定位**：`init-config --java` 和 gate 6.7 某项检查失败时，输出实际执行的完整命令、退出码、stderr 的最后若干行，并把完整输出写到 `.openspec/logs/quality-<检查>.log`（新建目录，路径写进报错）。联调中「插件无法解析」「没有匹配的 ArchUnit 测试」都只报了退出码 1，无法定位。本条会改到 `commands/init_config.py`，归本任务所有。
 7. 扫描范围补充：`src/main/resources` 以外、`.config.json` 里 `quality.sqlfluff.paths` 指定的目录（新增配置项，默认空，追加到 `config.DEFAULTS`）。写在 Java 注解里的 SQL（`@Select` 等）本任务不做，交付说明里标注。
+10. **同步 `tests/test_java.py` 里断言旧行为的测试**：只改下列测试中被本任务改掉的断言，其余不动；交付说明里列出改了哪些断言。
+    - `test_sql_resources_extract_flyway_and_mapper_include_and_bindings`：`#{}` 的预期从 `NULL` 改为 `?`；假命令改为读临时目录里的 SQL 文件、按文件输出结果（第 2、4 条）。
+    - `test_sql_resources_dynamic_or_missing_include_fail_closed`：动态标签不再预期整体失败，`${}` 改为预期 `mybatis-dollar-substitution` 违规；缺失 include 和循环引用仍断言失败（第 1、3 条）。
+    - `test_sql_resources_map_multiline_violation_to_original_mapper_line`：假命令输出的路径从 `stdin` 改为实际的临时 SQL 文件，仍验证映射回原 XML 第 4 行（第 4 条）。
+    - `test_archunit_uses_actual_system_property_names`、`test_defaults_support_builds_and_lock_archunit_freeze`、`test_archunit_environment_forces_freeze_policy_for_custom_commands`：只把属性名从 `archunit_freeze.*` 改为 `archunit.freeze.*`（第 9 条）。
+    - `test_archunit_freeze_updates_require_initialize` 不改：自定义命令里写旧拼写 `archunit_freeze.*=true`，正常检查时仍要拦截。
 
 **验收**
 - 使用了全部动态标签的 mapper 能被检查，违规行号正确；`${}` 作为违规出现且其余 SQL 照常检查。
